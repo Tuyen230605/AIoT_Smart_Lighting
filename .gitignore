@@ -1,0 +1,104 @@
+# ══════════════════════════════════════════════════════════════
+#  BÍ MẬT — TUYỆT ĐỐI KHÔNG BAO GIỜ COMMIT
+#  Mọi thay đổi ở khối này phải được rà rất kỹ.
+# ══════════════════════════════════════════════════════════════
+secrets.ini
+secrets/
+*.pem
+*.key
+*.crt
+*.der
+*.p12
+*.pfx
+*-private.*
+*private-key*
+.env
+.env.*
+!.env.example
+Secrets.cpp
+Secrets.h
+!Secrets.h.example
+!Secrets.cpp.example
+credentials.json
+aws-certs/
+
+# ══════════════════════════════════════════════════════════════
+#  Firmware — PlatformIO
+# ══════════════════════════════════════════════════════════════
+.pio/
+.pioenvs/
+.piolibdeps/
+*.elf
+*.bin
+*.map
+compile_commands.json
+
+# ══════════════════════════════════════════════════════════════
+#  Hub — Python
+# ══════════════════════════════════════════════════════════════
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+dist/
+build/
+
+# ══════════════════════════════════════════════════════════════
+#  Mô hình & dữ liệu — quản lý ngoài git (xem ml/datasets/README.md)
+# ══════════════════════════════════════════════════════════════
+*.gguf
+*.onnx
+*.tflite
+*.pt
+*.pth
+*.bin.gz
+models/weights/
+ml/datasets/**/*
+!ml/datasets/**/README.md
+!ml/datasets/**/manifest.yaml
+!ml/datasets/**/.gitkeep
+
+# Bản ghi âm & video thô — chứa dữ liệu cá nhân, không đưa lên
+*.wav
+*.mp3
+*.flac
+*.mp4
+*.avi
+!ml/datasets/**/sample_*.wav
+
+# ══════════════════════════════════════════════════════════════
+#  Kết quả đo — giữ file tổng hợp, bỏ file thô dung lượng lớn
+# ══════════════════════════════════════════════════════════════
+eval/results/raw/
+eval/results/**/*.csv
+!eval/results/**/summary_*.csv
+!eval/results/**/README.md
+
+# ══════════════════════════════════════════════════════════════
+#  IDE & hệ điều hành
+# ══════════════════════════════════════════════════════════════
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.shared.json
+.idea/
+*.code-workspace
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ══════════════════════════════════════════════════════════════
+#  Tài liệu — sản phẩm biên dịch
+# ══════════════════════════════════════════════════════════════
+docs/thesis/*.pdf
+docs/thesis/*.aux
+docs/thesis/*.log
+docs/thesis/*.out
+docs/thesis/*.toc
+~$*.docx
+~$*.xlsx

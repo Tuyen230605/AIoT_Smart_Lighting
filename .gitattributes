@@ -1,0 +1,25 @@
+# Chuẩn hoá xuống dòng — chấm dứt cảnh báo CRLF/LF khi làm việc trên Windows
+* text=auto eol=lf
+
+# File bắt buộc giữ CRLF (script Windows)
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# File nhị phân — không đụng vào
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.pdf  binary
+*.docx binary
+*.xlsx binary
+*.wav  binary
+*.mp4  binary
+*.tflite binary
+*.onnx binary
+*.gguf binary
+
+# Thư viện sinh tự động — không tính vào thống kê ngôn ngữ, không hiện trong diff
+firmware/*/lib/Oi_Voice_Assistant_inferencing/** linguist-vendored
+firmware/*/lib/Oi_Voice_Assistant_inferencing/** -diff

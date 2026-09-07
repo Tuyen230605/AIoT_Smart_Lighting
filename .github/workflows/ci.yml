@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  # ══════════════════════════════════════════════════════════════
+  #  Chặn rò rỉ bí mật — chạy TRƯỚC mọi job khác và không bao giờ
+  #  được phép tắt. Dự án này đã từng để lộ khoá riêng AWS một lần
+  #  (xem docs/07-security.md); job này tồn tại để điều đó không lặp lại.
+  # ══════════════════════════════════════════════════════════════
+  secrets-scan:
+    name: Quét bí mật
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # quét toàn bộ lịch sử, không chỉ commit mới
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Chặn các mẫu nguy hiểm đã biết
+        run: bash tools/scripts/check-secrets.sh
+
+  # ══════════════════════════════════════════════════════════════
+  #  Firmware — biên dịch cả ba node
+  # ══════════════════════════════════════════════════════════════
+  firmware:
+    name: Biên dịch firmware
+    needs: secrets-scan
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [node1_controller, node2_gate, node3_spotlight]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+
+      - name: Cài PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Tạo secrets.ini giả để build được trên CI
+        run: cp firmware/${{ matrix.node }}/secrets.ini.example \
+                firmware/${{ matrix.node }}/secrets.ini
+
+      - name: Cache thư viện PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ matrix.node }}-${{ hashFiles('firmware/*/platformio.ini') }}
+
+      - name: Build
+        working-directory: firmware/${{ matrix.node }}
+        run: pio run
+        continue-on-error: ${{ matrix.node == 'node3_spotlight' }}   # chưa có mã nguồn ở G1
+
+  # ══════════════════════════════════════════════════════════════
+  #  Hub — kiểm thử, trong đó quan trọng nhất là parity C ↔ Python
+  # ══════════════════════════════════════════════════════════════
+  hub:
+    name: Kiểm thử hub
+    needs: secrets-scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+
+      - name: Cài phụ thuộc
+        working-directory: hub
+        run: pip install -e ".[dev]"
+
+      - name: Lint
+        working-directory: hub
+        run: ruff check services tests
+
+      - name: Kiểm thử
+        working-directory: hub
+        run: pytest -v --cov=services --cov-report=term-missing

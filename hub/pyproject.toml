@@ -1,0 +1,28 @@
+[project]
+name = "oi-hub"
+version = "0.1.0"
+description = "Hub biên cho hệ chiếu sáng thích ứng ngữ cảnh Oi"
+requires-python = ">=3.11"
+dependencies = [
+    "paho-mqtt>=2.0",
+    "pydantic>=2.6",
+    "numpy>=1.26",
+    "astral>=3.2",        # giờ mọc/lặn mặt trời cho đặc trưng của AI-6
+]
+
+[project.optional-dependencies]
+asr    = ["faster-whisper>=1.0", "silero-vad>=5.0"]
+vision = ["opencv-python-headless>=4.9", "ncnn>=1.0"]
+policy = ["lightgbm>=4.3", "pandas>=2.2", "scikit-learn>=1.4"]
+dev    = ["pytest>=8.0", "pytest-cov", "ruff>=0.4", "mypy>=1.9"]
+
+[tool.pytest.ini_options]
+pythonpath = ["services"]
+testpaths  = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
