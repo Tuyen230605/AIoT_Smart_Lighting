@@ -12,7 +12,6 @@ import re
 from pathlib import Path
 
 import pytest
-
 from oi_common import protocol as py
 
 HEADER = (
@@ -33,9 +32,7 @@ def c_defines() -> dict[str, str]:
     text = HEADER.read_text(encoding="utf-8")
     out: dict[str, str] = {}
     for line in text.splitlines():
-        if m := _DEFINE_STR.search(line):
-            out[m.group(1)] = m.group(2)
-        elif m := _DEFINE_NUM.search(line):
+        if (m := _DEFINE_STR.search(line)) or (m := _DEFINE_NUM.search(line)):
             out[m.group(1)] = m.group(2)
     return out
 

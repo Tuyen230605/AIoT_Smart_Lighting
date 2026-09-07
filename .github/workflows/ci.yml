@@ -48,8 +48,10 @@ jobs:
         run: pip install --upgrade platformio
 
       - name: Tạo secrets.ini giả để build được trên CI
-        run: cp firmware/${{ matrix.node }}/secrets.ini.example \
-                firmware/${{ matrix.node }}/secrets.ini
+        # Một dòng — YAML gấp dòng đa dòng chèn khoảng trắng vào chỗ nối,
+        # bash hiểu nhầm "\ " thành khoảng trắng chèn vào giữa hai tham số
+        # (đích build ra tên file có dấu cách ở đầu, "cp" báo No such file).
+        run: cp firmware/${{ matrix.node }}/secrets.ini.example firmware/${{ matrix.node }}/secrets.ini
 
       - name: Cache thư viện PlatformIO
         uses: actions/cache@v4

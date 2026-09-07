@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "oi-hub"
 version = "0.1.0"
@@ -15,6 +19,16 @@ asr    = ["faster-whisper>=1.0", "silero-vad>=5.0"]
 vision = ["opencv-python-headless>=4.9", "ncnn>=1.0"]
 policy = ["lightgbm>=4.3", "pandas>=2.2", "scikit-learn>=1.4"]
 dev    = ["pytest>=8.0", "pytest-cov", "ruff>=0.4", "mypy>=1.9"]
+
+[tool.setuptools.package-dir]
+"" = "services"
+
+[tool.setuptools.packages.find]
+# `where` phải trỏ vào services/ (khớp với package-dir ở trên), không phải
+# thư mục gốc hub/ — nếu không, setuptools sẽ quét luôn hub/config/ (cấu
+# hình Mosquitto/Node-RED, không phải package Python) và từ chối đoán với
+# lỗi "Multiple top-level packages discovered in a flat-layout".
+where = ["services"]
 
 [tool.pytest.ini_options]
 pythonpath = ["services"]
