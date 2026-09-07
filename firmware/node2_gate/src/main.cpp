@@ -1,14 +1,19 @@
 #include <Arduino.h>
-#include <WiFiClientSecure.h>
+#include <WiFi.h>
+#include <WiFiClient.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 #include <ld2410.h>
 #include "Config.h"
 
+// ĐẤU NỐI TẠM THỜI (xem G1.6 trong kế hoạch thi công) — cùng lý do với
+// firmware/node1_controller/src/Task_Network.cpp: broker nội bộ, không TLS,
+// chưa có chứng chỉ nào trong mã nguồn. Sẽ nối lại AWS qua oi-bridge ở G2.
+
 // Khởi tạo các đối tượng
 ld2410 radar;
 HardwareSerial RadarSerial(2); // Dùng UART2
-WiFiClientSecure espClient;
+WiFiClient espClient;
 PubSubClient client(espClient);
 
 // Biến lưu thời gian để không gửi data liên tục gây nghẽn mạng
@@ -90,10 +95,10 @@ void setupWiFi() {
     Serial.println(WiFi.localIP());
 }
 
-// Hàm kết nối AWS IoT Core
+// Hàm kết nối broker MQTT
 void reconnectAWS() {
     while (!client.connected()) {
-        Serial.print("☁️ Đang kết nối đến AWS IoT Core... ");
+        Serial.print("☁️ Đang kết nối đến broker MQTT... ");
         
         if (client.connect(THING_NAME)) {
             Serial.println("✅ THÀNH CÔNG!");
@@ -130,12 +135,9 @@ void setup() {
         Serial.println("LỖI! Kiểm tra dây TX/RX.");
     }
 
-    // 2. Khởi tạo WiFi & AWS
+    // 2. Khởi tạo WiFi & broker nội bộ (không TLS — xem ghi chú đầu file)
     setupWiFi();
-    espClient.setCACert(AWS_CERT_CA);
-    espClient.setCertificate(AWS_CERT_CRT);
-    espClient.setPrivateKey(AWS_CERT_PRIVATE);
-    client.setServer(MQTT_SERVER, MQTT_PORT);
+    client.setServer(HUB_MQTT_HOST, HUB_MQTT_PORT);
     
     // Báo cho thư viện MQTT biết phải gọi hàm 'callback' khi có tin nhắn tới
     client.setCallback(callback);
@@ -231,7 +233,7 @@ void loop() {
 
             client.publish("oi/radar/status", jsonBuffer);
             
-            Serial.print("📦 Đã gửi AWS: ");
+            Serial.print("📦 Đã gửi broker: ");
             Serial.println(jsonBuffer);
         }
     }

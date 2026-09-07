@@ -1,21 +1,26 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include <WiFiClientSecure.h>
+#include <WiFi.h>
+#include <WiFiClient.h>
 #include <PubSubClient.h>
 #include "Config.h"
 
-// Các biến chứa Chứng chỉ bảo mật (được định nghĩa trong Secrets.cpp)
-extern const char AWS_CERT_CA[];
-extern const char AWS_CERT_CRT[];
-extern const char AWS_CERT_PRIVATE[];
+// ĐẤU NỐI TẠM THỜI (xem G1.5 trong kế hoạch thi công).
+// Bản DACN kết nối thẳng lên AWS IoT Core qua TLS bằng chứng chỉ nạp cứng.
+// Theo ADR 0003, broker nội bộ mới là đường chính; AWS chỉ còn là kênh xem
+// từ xa và sẽ được nối lại qua dịch vụ oi-bridge ở G2. Vì cơ chế nạp chứng
+// chỉ qua NVS (G1.7) chưa làm, file này tạm dùng MQTT thường (không TLS)
+// trỏ vào HUB_MQTT_HOST — không còn chứng chỉ nào trong mã nguồn.
+// G1.5 sẽ thay toàn bộ chuỗi topic/khoá JSON cứng dưới đây bằng các hằng số
+// trong oi_protocol.h và publish qua struct OiLightState.
 
 // Biến toàn cục để lưu lệnh
 extern String cmdAction;
 extern String cmdColor;
 extern int cmdBrightness;
 
-// Khởi tạo đối tượng WiFi Bảo mật và MQTT Client
-WiFiClientSecure net = WiFiClientSecure();
+// Khởi tạo đối tượng WiFi và MQTT Client
+WiFiClient net;
 PubSubClient client(net);
 
 
@@ -70,25 +75,19 @@ void connectAWS() {
   }
   Serial.println("\n✅ WiFi đã kết nối!");
 
-  // 2. Nạp chứng chỉ bảo mật cho kết nối TLS
-  net.setCACert(AWS_CERT_CA);
-  net.setCertificate(AWS_CERT_CRT);
-  net.setPrivateKey(AWS_CERT_PRIVATE);
+  // 2. Cấu hình broker nội bộ (không TLS — xem ghi chú đầu file)
+  client.setServer(HUB_MQTT_HOST, HUB_MQTT_PORT);
 
-  // 3. Cấu hình Server AWS
-  client.setServer(MQTT_SERVER, MQTT_PORT);
-
-  // Đăng ký hàm callback để nhận lệnh từ AWS
+  // Đăng ký hàm callback để nhận lệnh
   client.setCallback(callback);
 
-  // 4. Bắt tay với AWS IoT Core
-  Serial.println("🔐 Đang kết nối với AWS IoT Core...");
+  // 3. Bắt tay với broker
+  Serial.println("🔐 Đang kết nối với broker MQTT...");
   // Vòng lặp thử kết nối lại nếu thất bại
   while (!client.connected()) {
     Serial.print(".");
-    // Sử dụng THING_NAME Tuyền vừa đặt làm Client ID
-    if (client.connect("ESP32_AIoT_Node")) {
-      Serial.println("\n🚀 ĐÃ KẾT NỐI AWS IOT CORE THÀNH CÔNG!");
+    if (client.connect(THING_NAME)) {
+      Serial.println("\n🚀 ĐÃ KẾT NỐI BROKER THÀNH CÔNG!");
 
       // ESP32 đăng ký nghe lệnh từ Topic này
       client.subscribe("oi/light/command");
@@ -146,6 +145,6 @@ void sendTelemetry(float luxValue) {
   // Publish lên AWS
   client.publish(topic.c_str(), jsonBuffer);
   
-  Serial.print("☁️ Đã đẩy lên AWS: ");
+  Serial.print("☁️ Đã đẩy lên broker: ");
   Serial.println(jsonBuffer);
 }
