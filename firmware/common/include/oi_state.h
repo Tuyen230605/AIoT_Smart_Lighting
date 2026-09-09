@@ -20,6 +20,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "oi_protocol.h"   // OI_ZONE_*, OI_SCENE_*
+
 // ══════════════════════════════════════════════════════════════
 //  Chế độ chiếu sáng
 // ══════════════════════════════════════════════════════════════
@@ -59,6 +61,7 @@ typedef struct {
     uint16_t    cct;          // Kelvin
     uint32_t    rgb;          // 0xRRGGBB
     uint16_t    fade_ms;
+    uint8_t     scene;        // xem OI_SCENE_* — có nghĩa khi mode = SCENE/MUSIC
     uint32_t    seq;          // tăng dần — bỏ qua lệnh cũ đến muộn
     OiCmdSource src;
     uint32_t    ts;           // epoch giây khi lệnh được sinh ra
@@ -92,5 +95,24 @@ typedef struct {
 // ══════════════════════════════════════════════════════════════
 #define OI_PSU_VOLTS              5
 #define OI_PSU_MILLIAMPS          16000   // để dư biên so với nguồn 20 A
+
+// ══════════════════════════════════════════════════════════════
+//  Trạng thái lúc vừa cấp nguồn: đèn tắt, chưa ai ra lệnh.
+//  Đặt cuối file vì cần các hằng số phía trên.
+// ══════════════════════════════════════════════════════════════
+static inline OiLightState oiStateBoot(void) {
+    OiLightState s;
+    s.mode       = OI_MODE_OFF;
+    s.zone_mask  = OI_ZONE_ALL;
+    s.brightness = 0;
+    s.cct        = 4000;
+    s.rgb        = 0xFFFFFF;
+    s.fade_ms    = OI_MIN_FADE_MS;
+    s.scene      = OI_SCENE_NONE;
+    s.seq        = 0;
+    s.src        = OI_SRC_BOOT;
+    s.ts         = 0;
+    return s;
+}
 
 #endif // OI_STATE_H

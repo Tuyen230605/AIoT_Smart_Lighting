@@ -1,0 +1,11 @@
+// Copy file này thành  config.js  rồi điền. config.js nằm trong .gitignore.
+//
+// Mật khẩu này nằm trong JavaScript nên AI MỞ TRANG CŨNG ĐỌC ĐƯỢC (bấm F12).
+// Không có cách nào giấu — nên tài khoản `ui` bị giới hạn quyền bằng ACL:
+// đọc mọi thứ, nhưng chỉ ghi được vào nhánh oi/cmd/# (xem config/mosquitto/acl).
+// Nó bật tắt được đèn, nhưng không giả mạo được trạng thái, không bịa được
+// telemetry để đầu độc dữ liệu huấn luyện, không tắt được nhịp tim.
+//
+// Lớp bảo vệ thật nằm ở chỗ khác: mạng Oi-Net có mật khẩu riêng, không chia
+// cho ai. Xem mục "Mô hình mối đe doạ" trong docs/07-security.md.
+window.OI_UI_PASSWORD = "MAT_KHAU_DASHBOARD";

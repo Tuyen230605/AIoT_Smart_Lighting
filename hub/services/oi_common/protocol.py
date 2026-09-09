@@ -12,7 +12,7 @@ from enum import IntEnum, IntFlag
 #  Phiên bản giao thức
 # ══════════════════════════════════════════════════════════════
 PROTO_MAJOR = 1
-PROTO_MINOR = 0
+PROTO_MINOR = 1
 PROTO_STR = f"{PROTO_MAJOR}.{PROTO_MINOR}"
 
 # ══════════════════════════════════════════════════════════════
@@ -74,11 +74,18 @@ K_COLOR = "rgb"
 K_FADE_MS = "fade"
 K_SOURCE = "src"
 K_REASON = "why"
+K_SCENE = "scn"
 
 K_LUX = "lux"
 K_RSSI = "rssi"
 K_HEAP = "heap"
 K_UPTIME = "up"
+
+# Sức khoẻ thiết bị — dữ liệu đầu vào của cổng chất lượng G1.8
+K_HEAP_MIN = "heap_min"
+K_STACK = "stack"
+K_RECONNECTS = "recon"
+K_BOOTS = "boots"
 
 K_PRESENCE = "pres"
 K_DIST_MOVING = "d_mov"
@@ -134,6 +141,22 @@ class CmdSource(IntEnum):
     def is_autonomous(self) -> bool:
         """Hệ thống tự quyết — ứng viên để bị người dùng sửa lại."""
         return self in (CmdSource.AGENT, CmdSource.SCHEDULE)
+
+
+class Scene(IntEnum):
+    """Cảnh dựng sẵn — đi kèm LightMode.SCENE hoặc LightMode.MUSIC.
+
+    Tách khỏi trường màu: bản DACN chở tên hiệu ứng trong chuỗi màu nên không
+    thể vừa chọn hiệu ứng vừa chọn màu.
+    """
+
+    NONE = 0
+    READ = 1
+    MOVIE = 2
+    SLEEP = 3
+    MUSIC_LOFI = 10
+    MUSIC_ROCK = 11
+    MUSIC_EDM = 12
 
 
 class Zone(IntFlag):

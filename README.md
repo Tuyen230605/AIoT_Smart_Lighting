@@ -130,7 +130,7 @@ buộc phải bất cẩn**: khi khoá nằm trong file `.h` thì không có cá
 không commit khoá.
 
 ```
-  Wi-Fi + địa chỉ hub                 Chứng chỉ AWS
+  Wi-Fi + địa chỉ hub              Chứng chỉ TLS của mạng nhà
           │                                  │
   secrets.ini (gitignore)          Máy của bạn, ngoài kho mã
           │                                  │
@@ -309,11 +309,14 @@ docs/
 ├── 05-evaluation.md      Chỉ số hệ thống, thí nghiệm A và B
 ├── 06-hardware.md        Linh kiện, sơ đồ chân, đấu nối
 ├── 07-security.md        ✅ Xử lý bí mật, nhật ký sự cố rò rỉ
+├── 08-soak-test.md       ✅ Quy trình chạy liên tục 72 giờ (G1.8)
+├── 09-thay-doi-kien-truc.md  ✅ Vì sao kiến trúc thay đổi, kèm cách kiểm chứng
 │
 ├── adr/                  ★ Quyết định kiến trúc kèm LÝ DO
 │   ├── 0001-kien-truc-ai-hai-lop.md
 │   ├── 0002-hoc-phan-du-cho-so-thich.md
-│   └── 0003-broker-noi-bo-cloud-tuy-chon.md
+│   ├── 0003-broker-noi-bo-cloud-tuy-chon.md
+│   └── 0004-bo-phu-thuoc-dam-may.md
 │
 ├── diagrams/             Sơ đồ nguồn
 └── thesis/               Bản báo cáo và hình ảnh
@@ -383,10 +386,11 @@ pio run -t upload
 pio device monitor
 ```
 
-Chứng chỉ AWS nạp riêng, không qua mã nguồn:
+Chứng chỉ TLS nạp riêng, không qua mã nguồn (chỉ cần sau khi đã dựng hub ở G2.1 —
+trước đó node chạy đầy đủ qua cổng 1883 trong mạng nhà):
 
 ```bash
-python tools/provision/provision_node.py --port COM5 --node node1
+python tools/provision/provision_node.py --port COM5 --node node1     --ca certs/oi-ca.pem --cert certs/node1.crt --key certs/node1.key
 ```
 
 ### Hub

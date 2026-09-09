@@ -1,0 +1,28 @@
+# Danh sách kiểm soát truy cập.
+#
+# VÌ SAO CẦN, KHÔNG CHỈ LÀ XÁC THỰC
+# Tài khoản `ui` dùng bởi JavaScript chạy trong trình duyệt, nên mật khẩu của
+# nó AI MỞ TRANG CŨNG ĐỌC ĐƯỢC. Xác thực không đủ; phải giới hạn cả quyền.
+# Tài khoản đó chỉ được ĐỌC mọi thứ và chỉ được GHI vào nhánh lệnh — không
+# giả mạo được trạng thái, không bịa được telemetry, không tắt được nhịp tim.
+
+# ── Node ESP32 ────────────────────────────────────────────────
+# Ghi trạng thái/đo đạc của mình, đọc lệnh gửi cho mình, nghe nhịp tim.
+user node
+topic write oi/state/#
+topic write oi/tele/#
+topic write oi/wake/#
+topic write oi/sys/offline/#
+topic read  oi/cmd/#
+topic read  oi/sys/heartbeat
+
+# ── Dịch vụ trên hub ──────────────────────────────────────────
+# Toàn quyền: chúng là hệ thống.
+user svc
+topic readwrite oi/#
+
+# ── Dashboard trong trình duyệt ───────────────────────────────
+# Đọc tất cả để hiển thị; chỉ ghi được lệnh.
+user ui
+topic read  oi/#
+topic write oi/cmd/#

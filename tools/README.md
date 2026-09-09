@@ -6,6 +6,14 @@
 | `calibration/` | Hiệu chuẩn camera ↔ servo đèn rọi | Sau khi lắp hoặc di chuyển đèn rọi |
 | `scripts/` | Thu dữ liệu, đo độ trễ, tiện ích lặt vặt | Thường xuyên |
 
+## Hai công cụ đã có
+
+| Lệnh | Việc |
+|---|---|
+| `provision/provision_node.py` | Nạp chứng chỉ TLS của mạng nhà vào NVS qua Serial (G1.7). Chưa dựng hub thì chưa cần chạy — node vẫn chạy đủ qua cổng 1883. |
+| `scripts/soak_monitor.py` | Ghi và chấm điểm bài chạy 72 giờ (G1.8). Xem `docs/08-soak-test.md`. |
+| `scripts/check-secrets.sh` | Quét rò rỉ bí mật. CI gọi chính script này. |
+
 ## Hiệu chuẩn đèn rọi — ghi chú phương pháp
 
 Không dựng mô hình hình học 3D của căn phòng. Cách làm thô sơ mà chắc: rọi đèn thủ

@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Oi · Bảng điều khiển</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+/* Cùng hệ màu với bộ tài liệu của dự án: hổ quang 2700K làm màu nhấn,
+   ánh sáng ngày 6500K làm màu dữ liệu, trên nền xám thiết bị đo. */
+:root{
+  --paper:#F2F4F5; --surface:#FFFFFF; --surface-2:#E9ECEE; --surface-3:#DFE3E6;
+  --ink:#14181C; --ink-2:#4E5860; --ink-3:#7C868F;
+  --line:#D8DDE1; --line-2:#C2C9CE;
+  --accent:#9E5510; --accent-bright:#D98613; --accent-wash:#FBF0E1;
+  --cool:#1B6689; --cool-wash:#E4EFF4;
+  --ok:#1B6B47; --ok-wash:#E2F0E9;
+  --crit:#A3271F; --crit-wash:#FBEAE8;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0E1114; --surface:#161A1F; --surface-2:#1E242A; --surface-3:#252C33;
+    --ink:#E6EAEE; --ink-2:#9AA5AF; --ink-3:#6F7A84;
+    --line:#262D34; --line-2:#333C45;
+    --accent:#E8A33D; --accent-bright:#E8A33D; --accent-wash:#2A1F0F;
+    --cool:#5CACD1; --cool-wash:#122630;
+    --ok:#57B98C; --ok-wash:#122A1F;
+    --crit:#E0776C; --crit-wash:#2E1614;
+  }
+}
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font-family:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased;
+}
+h1,h2,h3{font-family:"IBM Plex Sans Condensed","IBM Plex Sans",sans-serif;margin:0;line-height:1.2}
+.mono,code{font-family:"IBM Plex Mono",ui-monospace,monospace}
+
+.wrap{max-width:1240px;margin:0 auto;padding:0 clamp(14px,3vw,28px) 64px}
+
+/* ── thanh trên ── */
+header{
+  display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;
+  padding:18px 0 14px;border-bottom:2px solid var(--ink);margin-bottom:22px;
+}
+header h1{font-size:20px;font-weight:700;letter-spacing:-.01em}
+header .sub{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--accent)}
+.spacer{flex:1}
+.pill{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.04em;
+  text-transform:uppercase;padding:3px 9px;border-radius:2px;white-space:nowrap;font-weight:500;
+}
+.pill.ok{background:var(--ok-wash);color:var(--ok)}
+.pill.bad{background:var(--crit-wash);color:var(--crit)}
+.pill.wait{background:var(--surface-3);color:var(--ink-3)}
+.pill.warn{background:var(--accent-wash);color:var(--accent)}
+
+/* ── lưới ── */
+.grid{display:grid;gap:16px;grid-template-columns:1fr}
+@media(min-width:820px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(min-width:1120px){.grid{grid-template-columns:repeat(12,minmax(0,1fr))}
+  .col-cam{grid-column:span 7}.col-side{grid-column:span 5}
+  .col-half{grid-column:span 6}.col-full{grid-column:span 12}}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:5px;overflow:hidden;display:flex;flex-direction:column}
+.card-h{
+  display:flex;align-items:center;gap:10px;padding:11px 15px;
+  background:var(--surface-2);border-bottom:1px solid var(--line);
+}
+.card-h h2{font-size:14.5px;font-weight:600;flex:1}
+.card-b{padding:15px;display:flex;flex-direction:column;gap:13px;flex:1}
+
+/* ── chỉ số ── */
+.rows{display:flex;flex-direction:column;gap:0}
+.row{display:flex;align-items:baseline;gap:12px;padding:7px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row dt{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--ink-3);flex:0 0 108px}
+.row dd{margin:0;font-family:"IBM Plex Mono",monospace;font-size:14px;
+  font-variant-numeric:tabular-nums;color:var(--ink);flex:1}
+
+.big{font-family:"IBM Plex Mono",monospace;font-size:30px;font-weight:600;
+  font-variant-numeric:tabular-nums;line-height:1.1}
+.big small{font-size:13px;font-weight:400;color:var(--ink-3);margin-left:4px}
+
+/* thanh mức sáng */
+.meter{height:7px;background:var(--surface-3);border-radius:99px;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--accent-bright);border-radius:99px;
+  transition:width .35s ease;width:0}
+
+/* ── điều khiển ── */
+.ctrls{display:flex;flex-wrap:wrap;gap:8px}
+button{
+  font-family:"IBM Plex Sans",sans-serif;font-size:13.5px;font-weight:500;
+  padding:8px 14px;border-radius:4px;border:1px solid var(--line-2);
+  background:var(--surface);color:var(--ink);cursor:pointer;
+}
+button:hover{border-color:var(--accent-bright);color:var(--accent)}
+button.primary{background:var(--accent-bright);border-color:var(--accent-bright);color:#14181C}
+button.primary:hover{filter:brightness(1.07);color:#14181C}
+button:disabled{opacity:.45;cursor:not-allowed}
+input[type=range]{width:100%;accent-color:var(--accent-bright)}
+.swatches{display:flex;gap:7px;flex-wrap:wrap}
+.sw{width:28px;height:28px;border-radius:4px;border:1px solid var(--line-2);cursor:pointer;padding:0}
+.sw:hover{outline:2px solid var(--accent-bright);outline-offset:1px}
+
+/* ── camera ── */
+.cam{
+  position:relative;background:var(--surface-3);border-radius:4px;overflow:hidden;
+  aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;
+}
+.cam img{width:100%;height:100%;object-fit:contain;display:block}
+.cam-off{text-align:center;color:var(--ink-3);font-size:13.5px;padding:20px;max-width:44ch}
+.cam-off strong{display:block;color:var(--ink-2);margin-bottom:6px;font-size:14.5px}
+
+/* ── nhật ký ── */
+.log{display:flex;flex-direction:column;gap:0;max-height:290px;overflow-y:auto}
+.log-item{padding:9px 0;border-bottom:1px solid var(--line);display:flex;gap:11px;align-items:baseline}
+.log-item:last-child{border-bottom:0}
+.log-time{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-3);flex:none}
+.log-msg{font-size:13.5px;color:var(--ink-2);flex:1}
+.log-item.corr .log-msg{color:var(--accent)}
+.empty{color:var(--ink-3);font-size:13.5px;font-style:italic;padding:8px 0}
+
+.note{
+  background:var(--cool-wash);border-left:3px solid var(--cool);border-radius:0 3px 3px 0;
+  padding:10px 13px;font-size:12.5px;color:var(--ink-2);
+}
+.note strong{color:var(--ink)}
+:focus-visible{outline:2px solid var(--accent-bright);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div>
+    <div class="sub">Hệ chiếu sáng thích ứng ngữ cảnh</div>
+    <h1>Oi · Bảng điều khiển</h1>
+  </div>
+  <div class="spacer"></div>
+  <span class="pill wait" id="conn">đang nối broker</span>
+  <span class="pill wait" id="level">mức —</span>
+</header>
+
+<div class="grid">
+
+  <!-- ═══ camera ═══ -->
+  <section class="card col-cam">
+    <div class="card-h">
+      <h2>Hệ thống đang nhìn thấy gì</h2>
+      <span class="pill wait" id="cam-state">tắt</span>
+      <button id="cam-toggle">Xem</button>
+    </div>
+    <div class="card-b">
+      <div class="cam" id="cam">
+        <div class="cam-off" id="cam-off">
+          <strong>Luồng hình đang tắt</strong>
+          Camera chỉ mã hoá hình khi có người thực sự đang xem. Bấm “Xem” để bật —
+          và tắt lại khi xong, để Pi dành CPU cho nhận dạng tiếng nói.
+        </div>
+      </div>
+      <div class="note">
+        <strong>Đây không phải camera an ninh.</strong> Luồng hiển thị là khung hình
+        <em>đã chú giải</em>: hộp bao người, tên vùng, và mức sáng hệ thống đang tính cho
+        vùng đó — để trả lời câu “vì sao đèn vừa tự bật”. Khung hình không rời khỏi mạng
+        LAN và không bao giờ được ghi ra đĩa (ADR 0005).
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ node 1 ═══ -->
+  <section class="card col-side">
+    <div class="card-h">
+      <h2>Node 1 · Đèn phòng</h2>
+      <span class="pill wait" id="n1-online">—</span>
+    </div>
+    <div class="card-b">
+      <div>
+        <div class="big"><span id="n1-bri">—</span><small>/ 255</small></div>
+        <div class="meter" style="margin-top:8px"><i id="n1-meter"></i></div>
+      </div>
+      <dl class="rows">
+        <div class="row"><dt>Chế độ</dt><dd id="n1-mode">—</dd></div>
+        <div class="row"><dt>Nhiệt độ màu</dt><dd id="n1-cct">—</dd></div>
+        <div class="row"><dt>Nguồn lệnh</dt><dd id="n1-src">—</dd></div>
+        <div class="row"><dt>Ánh sáng phòng</dt><dd id="n1-lux">—</dd></div>
+        <div class="row"><dt>Bộ nhớ trống</dt><dd id="n1-heap">—</dd></div>
+      </dl>
+
+      <div class="ctrls">
+        <button class="primary" id="b-on">Bật</button>
+        <button id="b-off">Tắt</button>
+        <button id="b-read">Cảnh đọc sách</button>
+        <button id="b-music">Nháy nhạc</button>
+      </div>
+      <div>
+        <label class="mono" style="font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)">Độ sáng</label>
+        <input type="range" id="s-bri" min="1" max="255" value="128">
+      </div>
+      <div class="swatches" id="swatches"></div>
+    </div>
+  </section>
+
+  <!-- ═══ node 2 ═══ -->
+  <section class="card col-half">
+    <div class="card-h">
+      <h2>Node 2 · Đèn cổng</h2>
+      <span class="pill wait" id="n2-online">—</span>
+    </div>
+    <div class="card-b">
+      <dl class="rows">
+        <div class="row"><dt>Đèn cổng</dt><dd id="n2-light">—</dd></div>
+        <div class="row"><dt>Có người</dt><dd id="n2-pres">—</dd></div>
+        <div class="row"><dt>Khoảng cách</dt><dd id="n2-dist">—</dd></div>
+        <div class="row"><dt>Nguồn lệnh</dt><dd id="n2-src">—</dd></div>
+      </dl>
+      <div class="note">
+        Luật “có người → bật đèn” chạy <strong>trong chính firmware</strong> của node này.
+        Rút mạng thì nó vẫn hoạt động — hub chỉ ghi đè được trong 5 phút rồi quyền tự trả
+        về luật cục bộ.
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ chỉ số học ═══ -->
+  <section class="card col-half">
+    <div class="card-h"><h2>Hệ thống đang học tốt đến đâu</h2></div>
+    <div class="card-b">
+      <div>
+        <div class="big"><span id="s4-rate">—</span></div>
+        <div class="mono" style="font-size:11.5px;color:var(--ink-3);margin-top:2px">
+          tỉ lệ chỉnh tay · 7 ngày gần nhất
+        </div>
+      </div>
+      <dl class="rows">
+        <div class="row"><dt>Tự quyết</dt><dd id="s4-auto">—</dd></div>
+        <div class="row"><dt>Bị sửa lại</dt><dd id="s4-corr">—</dd></div>
+      </dl>
+      <div class="note">
+        Đây là chỉ số <strong>S4</strong>, thứ đo <em>giá trị</em> của AI chứ không đo độ
+        chính xác. Đường đi xuống theo tuần là bằng chứng của đóng góp C4. Mỗi lần bạn
+        chỉnh tay sau khi hệ thống tự đổi, một mẫu huấn luyện được ghi lại.
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ nhật ký ═══ -->
+  <section class="card col-full">
+    <div class="card-h"><h2>Vì sao đèn vừa thay đổi</h2></div>
+    <div class="card-b">
+      <div class="log" id="log"><div class="empty">Chưa có quyết định tự động nào được ghi lại.</div></div>
+    </div>
+  </section>
+
+</div>
+</div>
+
+<script src="config.js"></script>
+<script src="vendor/mqtt.min.js"></script>
+<script>
+/* ══════════════════════════════════════════════════════════════
+   Dashboard nói THẲNG với Mosquitto qua WebSocket. Không có backend.
+
+   Vì sao làm được: từ G1.5, firmware publish oi/state/<node> với cờ retain
+   sau MỌI thay đổi. Trang vừa mở là broker gửi ngay trạng thái hiện tại —
+   không cần endpoint /api/status nào cả. Broker chính là API.
+   ══════════════════════════════════════════════════════════════ */
+
+const NODE1 = "node1", NODE2 = "node2";
+
+/* Nguồn lệnh — phải khớp OiCmdSource trong firmware/common/include/oi_state.h.
+   Mọi lệnh từ trang này mang src=WEB để mô hình học sở thích biết đó là ý
+   người dùng, không phải hệ thống tự quyết. */
+const SRC_WEB = 4;
+const MODE = { 0:"tắt", 1:"màu tĩnh", 2:"nhạc", 3:"cảnh dựng sẵn", 4:"bám người" };
+const SRC  = { 0:"khởi động", 1:"giọng nói", 2:"giọng nói qua hub",
+               3:"nút bấm", 4:"web", 5:"hệ thống tự quyết", 6:"hẹn giờ" };
+
+const $ = id => document.getElementById(id);
+const setPill = (el, text, cls) => { el.textContent = text; el.className = "pill " + cls; };
+
+/* Số thứ tự lệnh: tăng dần để node bỏ được lệnh cũ đến muộn (mạng có thể đảo
+   thứ tự). Mốc theo thời gian thực để không đụng seq của các client khác. */
+let seq = Math.floor(Date.now() / 1000);
+
+const client = mqtt.connect(`ws://${location.hostname}:9001`, {
+  username: "ui",
+  password: window.OI_UI_PASSWORD || "",
+  clientId: "ui-" + Math.random().toString(16).slice(2, 10),
+  reconnectPeriod: 2000,
+  clean: true,
+});
+
+client.on("connect", () => {
+  setPill($("conn"), "đã nối broker", "ok");
+  client.subscribe(["oi/state/+", "oi/tele/+", "oi/ctx/fused",
+                    "oi/agent/log", "oi/sys/stats", "oi/sys/offline/+"]);
+});
+client.on("reconnect", () => setPill($("conn"), "đang nối lại", "wait"));
+client.on("error",  () => setPill($("conn"), "lỗi kết nối", "bad"));
+client.on("close",  () => {
+  setPill($("conn"), "mất kết nối", "bad");
+  setPill($("level"), "mức L2+", "bad");
+});
+
+client.on("message", (topic, buf) => {
+  let m; try { m = JSON.parse(buf.toString()); } catch { return; }
+  const leaf = topic.split("/").pop();
+
+  if (topic.startsWith("oi/state/"))       onState(leaf, m);
+  else if (topic.startsWith("oi/tele/"))   onTele(leaf, m);
+  else if (topic === "oi/agent/log")       onLog(m);
+  else if (topic === "oi/sys/stats")       onStats(m);
+  else if (topic.startsWith("oi/sys/offline/")) onPresence(leaf, m);
+});
+
+/* ── trạng thái đèn ─────────────────────────────────────────── */
+function onState(node, m) {
+  if (node === NODE1) {
+    const bri = m.bri ?? 0, off = (m.mode ?? 0) === 0;
+    $("n1-bri").textContent  = off ? "0" : bri;
+    $("n1-meter").style.width = (off ? 0 : bri / 255 * 100) + "%";
+    $("n1-mode").textContent = MODE[m.mode] ?? "—";
+    $("n1-cct").textContent  = m.cct ? m.cct + " K" : "—";
+    $("n1-src").textContent  = SRC[m.src] ?? "—";
+    if (!sliderBusy) $("s-bri").value = Math.max(1, bri);
+  } else if (node === NODE2) {
+    const on = (m.mode ?? 0) !== 0;
+    $("n2-light").textContent = on ? "đang bật" : "đang tắt";
+    $("n2-src").textContent   = SRC[m.src] ?? "—";
+  }
+}
+
+/* ── đo đạc và sức khoẻ ─────────────────────────────────────── */
+function onTele(node, m) {
+  if (node === NODE1) {
+    if (m.lux  !== undefined) $("n1-lux").textContent  = m.lux.toFixed(1) + " lx";
+    if (m.heap !== undefined) $("n1-heap").textContent = (m.heap / 1024).toFixed(0) + " KB";
+  }
+  if (node === NODE2 && m.pres !== undefined) {
+    $("n2-pres").textContent = m.pres ? "có" : "không";
+    const d = m.d_mov || m.d_sta;
+    $("n2-dist").textContent = d ? d + " cm" : "—";
+  }
+}
+
+function onPresence(name, m) {
+  const el = name === NODE1 ? $("n1-online") : name === NODE2 ? $("n2-online") : null;
+  if (el) setPill(el, m.online ? "trực tuyến" : "mất kết nối", m.online ? "ok" : "bad");
+  refreshLevel();
+}
+
+function refreshLevel() {
+  const n1 = $("n1-online").textContent === "trực tuyến";
+  const n2 = $("n2-online").textContent === "trực tuyến";
+  if (n1 && n2) setPill($("level"), "mức L0 · đủ chức năng", "ok");
+  else if (n1 || n2) setPill($("level"), "mức L3 · một node mất", "warn");
+  else setPill($("level"), "mức L3 · mất node", "bad");
+}
+
+/* ── nhật ký giải thích (FR-E3) ─────────────────────────────── */
+const logEl = $("log");
+let logCount = 0;
+function onLog(m) {
+  if (!m.why) return;
+  if (logCount === 0) logEl.innerHTML = "";
+  const t = new Date((m.ts || Date.now() / 1000) * 1000);
+  const item = document.createElement("div");
+  item.className = "log-item" + (m.correction ? " corr" : "");
+  const time = document.createElement("span");
+  time.className = "log-time";
+  time.textContent = t.toLocaleTimeString("vi-VN", {hour:"2-digit", minute:"2-digit"});
+  const msg = document.createElement("span");
+  msg.className = "log-msg";
+  msg.textContent = m.why;                     // textContent: không bao giờ dựng HTML từ MQTT
+  item.append(time, msg);
+  logEl.prepend(item);
+  if (++logCount > 60) logEl.lastElementChild?.remove();
+}
+
+function onStats(m) {
+  $("s4-rate").textContent = m.rate === null || m.rate === undefined
+    ? "—" : (m.rate * 100).toFixed(0) + "%";
+  $("s4-auto").textContent = (m.auto_actions ?? 0) + " lần";
+  $("s4-corr").textContent = (m.corrections ?? 0) + " lần";
+}
+
+/* ── gửi lệnh ───────────────────────────────────────────────── */
+function send(node, patch) {
+  client.publish(`oi/cmd/${node}`,
+    JSON.stringify({ src: SRC_WEB, seq: ++seq, ts: Math.floor(Date.now()/1000), ...patch }),
+    { qos: 1, retain: false });   // lệnh KHÔNG retain: lệnh là sự kiện, không phải trạng thái
+}
+
+$("b-on").onclick    = () => send(NODE1, { mode:1, bri:180, cct:4000, rgb:0xFFFFFF, fade:500 });
+$("b-off").onclick   = () => send(NODE1, { mode:0, fade:800 });
+$("b-read").onclick  = () => send(NODE1, { mode:3, scn:1, bri:210, cct:4000, fade:700 });
+$("b-music").onclick = () => send(NODE1, { mode:2, scn:12, bri:150, fade:500 });
+
+let sliderBusy = false, sliderTimer = null;
+$("s-bri").oninput = e => {
+  sliderBusy = true;
+  clearTimeout(sliderTimer);
+  // Gộp nhịp: kéo thanh trượt sinh hàng chục sự kiện, gửi hết sẽ ngập hàng đợi
+  // lệnh của node (sâu 8 ô) và làm rớt lệnh.
+  sliderTimer = setTimeout(() => {
+    send(NODE1, { mode:1, bri:Number(e.target.value), fade:300 });
+    sliderBusy = false;
+  }, 120);
+};
+
+const COLORS = [["Trắng",0xFFFFFF],["Đỏ",0xFF0000],["Lục",0x00FF00],["Lam",0x0000FF],
+                ["Vàng",0xFFFF00],["Tím",0x800080],["Lơ",0x00FFFF]];
+for (const [name, rgb] of COLORS) {
+  const b = document.createElement("button");
+  b.className = "sw";
+  b.title = name;
+  b.setAttribute("aria-label", name);
+  b.style.background = "#" + rgb.toString(16).padStart(6, "0");
+  b.onclick = () => send(NODE1, { mode:1, rgb, fade:500 });
+  $("swatches").append(b);
+}
+
+/* ── camera: chỉ mã hoá khi có người xem (ràng buộc 1, ADR 0005) ── */
+let camOn = false;
+$("cam-toggle").onclick = () => {
+  camOn = !camOn;
+  const box = $("cam");
+  if (camOn) {
+    const img = document.createElement("img");
+    img.alt = "Luồng camera đã chú giải: hộp bao người, tên vùng, mức sáng đang tính";
+    img.src = `http://${location.hostname}:8090/stream.mjpg?t=${Date.now()}`;
+    img.onerror = () => {
+      box.innerHTML = "";
+      const d = document.createElement("div");
+      d.className = "cam-off";
+      d.innerHTML = "<strong>Không nối được luồng hình</strong>" +
+                    "Dịch vụ oi-vision chưa chạy, hoặc công tắc nguồn camera đang tắt. " +
+                    "Hệ thống vẫn hoạt động bằng radar (mức suy giảm L4).";
+      box.append(d);
+      setPill($("cam-state"), "không có tín hiệu", "bad");
+    };
+    box.innerHTML = "";
+    box.append(img);
+    setPill($("cam-state"), "đang xem", "ok");
+    $("cam-toggle").textContent = "Tắt";
+  } else {
+    box.innerHTML = "";
+    const d = document.createElement("div");
+    d.className = "cam-off";
+    d.innerHTML = "<strong>Luồng hình đang tắt</strong>Camera chỉ mã hoá hình khi có " +
+                  "người thực sự đang xem. Bấm “Xem” để bật — và tắt lại khi xong, để " +
+                  "Pi dành CPU cho nhận dạng tiếng nói.";
+    box.append(d);
+    setPill($("cam-state"), "tắt", "wait");
+    $("cam-toggle").textContent = "Xem";
+  }
+};
+</script>
+</body>
+</html>

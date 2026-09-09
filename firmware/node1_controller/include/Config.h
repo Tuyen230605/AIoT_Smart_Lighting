@@ -28,22 +28,32 @@
 #define WIFI_PASS        ""
 #endif
 #ifndef HUB_MQTT_HOST
-#define HUB_MQTT_HOST    "192.168.1.10"   // broker nội bộ — đường chính
+#define HUB_MQTT_HOST    "192.168.50.1"   // broker nội bộ — đường chính
 #endif
 #ifndef HUB_MQTT_PORT
 #define HUB_MQTT_PORT    1883
 #endif
-#ifndef AWS_MQTT_HOST
-#define AWS_MQTT_HOST    ""               // đám mây — đường phụ, có thể bỏ trống
+
+// Tài khoản broker nội bộ (Mosquitto có xác thực — dựng ở G2.1).
+// Để trống thì kết nối ẩn danh, dùng được trong lúc chưa dựng hub.
+#ifndef MQTT_USER
+#define MQTT_USER        ""
 #endif
-#define AWS_MQTT_PORT    8883
+#ifndef MQTT_PASS
+#define MQTT_PASS        ""
+#endif
+
+// Mật khẩu OTA. Để trống thì OTA bị TẮT — xem oi_ota.h.
+#ifndef OTA_PASSWORD
+#define OTA_PASSWORD     ""
+#endif
 
 // Chứng chỉ đọc từ phân vùng NVS lúc chạy, KHÔNG biên dịch cứng vào firmware.
 // Nạp bằng: python tools/provision/provision_node.py --port COMx
 #define NVS_NAMESPACE    "oi_creds"
-#define NVS_KEY_CA       "aws_ca"
-#define NVS_KEY_CERT     "aws_cert"
-#define NVS_KEY_PKEY     "aws_pkey"
+#define NVS_KEY_CA       "ca"        // CA của mạng nhà (tự ký)
+#define NVS_KEY_CERT     "cert"      // chứng chỉ thiết bị
+#define NVS_KEY_PKEY     "pkey"      // khoá riêng thiết bị
 
 // ══════════════════════════════════════════════════════════════
 //  Sơ đồ chân — ESP32-S3 DevKitC-1
@@ -102,6 +112,26 @@
 #define SENSOR_PERIOD_MS 2000
 #define BUTTON_SCAN_MS   20
 #define CMD_QUEUE_DEPTH  8
+
+// ══════════════════════════════════════════════════════════════
+//  Ngưỡng VAD năng lượng (G1.3)
+//
+//  Bản DACN so sánh với 50, nhưng lúc đó tín hiệu đã bị nhân ×8 bởi noise gate.
+//  G1.3 bỏ hẳn khối nhân đó (nó gây méo phi tuyến và clip int16), nên biên độ
+//  mẫu giờ nhỏ hơn khoảng 8 lần và ngưỡng phải hạ theo cho tương đương.
+//  ĐÂY LÀ ƯỚC TÍNH — phải đo lại bằng thực nghiệm ở G1b.1.
+// ══════════════════════════════════════════════════════════════
+#define VAD_ENERGY_THRESHOLD  6
+
+// Im lặng liên tiếp bao nhiêu lát thì coi như phát ngôn đã kết thúc và
+// dọn cửa sổ trượt của bộ phân loại, tránh ghép nhầm hai câu cách xa nhau.
+#define VAD_SILENCE_SLICES    4
+
+// ══════════════════════════════════════════════════════════════
+//  Nhịp gửi số liệu sức khoẻ (G1.8)
+//  Mỗi phút một lần suốt 72 giờ = 4.320 điểm đo, đủ dày để thấy heap trôi.
+// ══════════════════════════════════════════════════════════════
+#define HEALTH_PERIOD_MS 60000
 
 // ══════════════════════════════════════════════════════════════
 //  Chặn build khi quên cấu hình secrets.ini
