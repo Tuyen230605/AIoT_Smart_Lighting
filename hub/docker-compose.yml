@@ -2,46 +2,47 @@
 # giao tiếp thuần qua MQTT nội bộ. Ranh giới này chính là thứ cho phép
 # thực hiện các thí nghiệm bóc tách (docs/05-evaluation.md) bằng cách
 # tắt một service, mà không phải sửa dòng mã nào.
+#
+# MVP (giai đoạn G2) bật những dịch vụ có profile mặc định. ASR và agent
+# cần tải trọng số mô hình nên để riêng profile `voice`:
+#     docker compose up -d                      # lát cắt dọc, chạy được ngay
+#     docker compose --profile voice up -d      # thêm đường tiếng nói
 name: oi
 
 services:
   broker:
     image: eclipse-mosquitto:2
     restart: unless-stopped
-    ports: ["1883:1883"]
+    ports:
+      - "1883:1883"     # node ESP32 và các dịch vụ
+      - "9001:9001"     # WebSocket cho dashboard trong trình duyệt
     volumes:
       - ./config/mosquitto:/mosquitto/config:ro
       - mosquitto_data:/mosquitto/data
 
-  state:                      # nguồn sự thật duy nhất về trạng thái
+  state:                      # nguồn sự thật duy nhất + nhịp tim 1 Hz
     build: { context: ., dockerfile: services/oi_state/Dockerfile }
     restart: unless-stopped
     depends_on: [broker]
     env_file: [.env]
     volumes: ["oi_data:/data"]
 
-  asr:                        # AI-2 · giọng nói → chữ
-    build: { context: ., dockerfile: services/oi_asr/Dockerfile }
+  ui:                         # dashboard — file tĩnh, không backend
+    build: { context: ./ui }
     restart: unless-stopped
     depends_on: [broker]
-    env_file: [.env]
-    ports: ["5005:5005/udp"]  # nhận luồng PCM từ node khi leo thang
-    volumes: ["models:/models"]
+    ports: ["80:80"]
 
-  agent:                      # AI-3 · ý định → lệnh
-    build: { context: ., dockerfile: services/oi_agent/Dockerfile }
-    restart: unless-stopped
-    depends_on: [broker, state]
-    env_file: [.env]
-    volumes: ["models:/models"]
-
-  vision:                     # AI-4, AI-5 · người ở đâu, đang làm gì
+  vision:                     # AI-4 · người ở đâu + luồng hình chú giải
     build: { context: ., dockerfile: services/oi_vision/Dockerfile }
     restart: unless-stopped
     depends_on: [broker]
     env_file: [.env]
+    ports: ["8090:8090"]      # MJPEG, chỉ mã hoá khi có người xem (ADR 0005)
     devices: ["/dev/video0:/dev/video0"]
-    volumes: ["models:/models"]
+    volumes:
+      - "models:/models"
+      - "oi_data:/data"       # zones.json
 
   context:                    # hợp nhất radar + thị giác + lux + giờ
     build: { context: ., dockerfile: services/oi_context/Dockerfile }
@@ -49,12 +50,37 @@ services:
     depends_on: [broker]
     env_file: [.env]
 
-  policy:                     # AI-6 · học mức sáng ưa thích
+  policy:                     # AI-6 · luật nền; LightGBM lắp ở G3.7
     build: { context: ., dockerfile: services/oi_policy/Dockerfile }
     restart: unless-stopped
     depends_on: [broker, state]
     env_file: [.env]
     volumes: ["oi_data:/data"]
+
+  nodered:                    # công cụ vận hành và gỡ lỗi, không phải mặt tiền
+    image: nodered/node-red:latest
+    restart: unless-stopped
+    depends_on: [broker]
+    ports: ["1880:1880"]
+    volumes: ["./config/nodered:/data"]
+
+  # ── Đường tiếng nói: cần trọng số mô hình, bật riêng ──────────
+  asr:                        # AI-2 · giọng nói → chữ
+    build: { context: ., dockerfile: services/oi_asr/Dockerfile }
+    restart: unless-stopped
+    depends_on: [broker]
+    env_file: [.env]
+    ports: ["5005:5005/udp"]  # nhận luồng PCM từ node khi leo thang
+    volumes: ["models:/models"]
+    profiles: ["voice"]
+
+  agent:                      # AI-3 · ý định → lệnh
+    build: { context: ., dockerfile: services/oi_agent/Dockerfile }
+    restart: unless-stopped
+    depends_on: [broker, state]
+    env_file: [.env]
+    volumes: ["models:/models"]
+    profiles: ["voice"]
 
   tts:                        # AI-8 · phản hồi bằng tiếng nói (mở rộng)
     build: { context: ., dockerfile: services/oi_tts/Dockerfile }
@@ -62,14 +88,7 @@ services:
     depends_on: [broker]
     env_file: [.env]
     volumes: ["models:/models"]
-    profiles: ["extended"]    # docker compose --profile extended up
-
-  nodered:
-    image: nodered/node-red:latest
-    restart: unless-stopped
-    depends_on: [broker]
-    ports: ["1880:1880"]
-    volumes: ["./config/nodered:/data"]
+    profiles: ["extended"]
 
 volumes:
   mosquitto_data:
