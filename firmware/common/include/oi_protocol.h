@@ -20,7 +20,11 @@
 //  khác MAJOR phải từ chối nói chuyện với nhau.
 // ══════════════════════════════════════════════════════════════
 #define OI_PROTO_MAJOR 1
-#define OI_PROTO_MINOR 0
+#define OI_PROTO_MINOR 1
+
+// Dạng chuỗi để nhét vào trường "proto" của mọi bản tin. Sửa cùng lúc với hai
+// số trên — có một chỗ để quên vẫn hơn ba chỗ rải trong các file firmware.
+#define OI_PROTO_STR   "1.1"
 
 // ══════════════════════════════════════════════════════════════
 //  Định danh node
@@ -81,12 +85,22 @@
 #define OI_K_FADE_MS     "fade"      // uint16, thời gian chuyển cảnh
 #define OI_K_SOURCE      "src"       // xem OiCmdSource — AI-6 cần trường này
 #define OI_K_REASON      "why"       // chuỗi ngắn, phục vụ nhật ký giải thích
+#define OI_K_SCENE       "scn"       // uint8, xem OI_SCENE_* — chọn cảnh khi mode=SCENE/MUSIC
 
 // --- Đo đạc ---
 #define OI_K_LUX         "lux"
 #define OI_K_RSSI        "rssi"
 #define OI_K_HEAP        "heap"
 #define OI_K_UPTIME      "up"
+
+// --- Sức khoẻ thiết bị (G1.8 — chạy liên tục 72 giờ) ---
+// Bốn trường này là toàn bộ bằng chứng cho cổng chất lượng cuối G1: rò rỉ bộ
+// nhớ lộ ra ở heap_min trôi xuống, tràn ngăn xếp lộ ra ở stack tiến về 0, và
+// mọi lần reset ngoài ý muốn lộ ra ở boots tăng.
+#define OI_K_HEAP_MIN    "heap_min"  // uint32, ESP.getMinFreeHeap() từ lúc boot
+#define OI_K_STACK       "stack"     // object {tên_task: số word còn dư}
+#define OI_K_RECONNECTS  "recon"     // uint32, số lần nối lại broker kể từ boot
+#define OI_K_BOOTS       "boots"     // uint32, đếm trong NVS — sống qua mọi lần reset
 
 // --- Radar (node2) ---
 #define OI_K_PRESENCE    "pres"
@@ -113,6 +127,22 @@
 #define OI_ZONE_BED      0x08   // giường
 #define OI_ZONE_GATE     0x10   // cổng (node2)
 #define OI_ZONE_ALL      0x1F
+
+// ══════════════════════════════════════════════════════════════
+//  Cảnh dựng sẵn — trường `scene` của OiLightState
+//
+//  OiLightMode chỉ nói "đang ở chế độ SCENE hay MUSIC" chứ không nói CẢNH NÀO.
+//  Bản DACN nhét thông tin này vào chuỗi màu (cmdColor = "lofi"), tức là dùng
+//  một trường để chở hai nghĩa — thứ vỡ ngay khi cần vừa chọn hiệu ứng vừa
+//  chọn màu. Tách hẳn ra một trường riêng.
+// ══════════════════════════════════════════════════════════════
+#define OI_SCENE_NONE        0
+#define OI_SCENE_READ        1    // đọc sách — trắng ấm, độ sáng cao
+#define OI_SCENE_MOVIE       2    // xem phim — tối, ám xanh
+#define OI_SCENE_SLEEP       3    // ngủ — hổ phách rất mờ
+#define OI_SCENE_MUSIC_LOFI  10   // nhịp thở chậm
+#define OI_SCENE_MUSIC_ROCK  11   // chớp giật theo bass
+#define OI_SCENE_MUSIC_EDM   12   // cầu vồng cuộn + flash
 
 // ══════════════════════════════════════════════════════════════
 //  Ngưỡng của giao thức leo thang (xem docs/04-protocols.md)

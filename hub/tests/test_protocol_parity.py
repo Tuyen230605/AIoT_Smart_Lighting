@@ -82,10 +82,15 @@ KEY_PAIRS = [
     ("OI_K_FADE_MS", py.K_FADE_MS),
     ("OI_K_SOURCE", py.K_SOURCE),
     ("OI_K_REASON", py.K_REASON),
+    ("OI_K_SCENE", py.K_SCENE),
     ("OI_K_LUX", py.K_LUX),
     ("OI_K_RSSI", py.K_RSSI),
     ("OI_K_HEAP", py.K_HEAP),
     ("OI_K_UPTIME", py.K_UPTIME),
+    ("OI_K_HEAP_MIN", py.K_HEAP_MIN),
+    ("OI_K_STACK", py.K_STACK),
+    ("OI_K_RECONNECTS", py.K_RECONNECTS),
+    ("OI_K_BOOTS", py.K_BOOTS),
     ("OI_K_PRESENCE", py.K_PRESENCE),
     ("OI_K_DIST_MOVING", py.K_DIST_MOVING),
     ("OI_K_DIST_STATIC", py.K_DIST_STATIC),
@@ -131,6 +136,32 @@ THRESHOLD_PAIRS = [
 def test_thresholds_match(c_defines, c_name, py_value):
     assert c_name in c_defines, f"{c_name} biến mất khỏi oi_protocol.h"
     assert float(c_defines[c_name]) == pytest.approx(float(py_value))
+
+
+SCENE_PAIRS = [
+    ("OI_SCENE_NONE", py.Scene.NONE),
+    ("OI_SCENE_READ", py.Scene.READ),
+    ("OI_SCENE_MOVIE", py.Scene.MOVIE),
+    ("OI_SCENE_SLEEP", py.Scene.SLEEP),
+    ("OI_SCENE_MUSIC_LOFI", py.Scene.MUSIC_LOFI),
+    ("OI_SCENE_MUSIC_ROCK", py.Scene.MUSIC_ROCK),
+    ("OI_SCENE_MUSIC_EDM", py.Scene.MUSIC_EDM),
+]
+
+
+@pytest.mark.parametrize("c_name,py_value", SCENE_PAIRS)
+def test_scene_values_match(c_defines, c_name, py_value):
+    assert c_name in c_defines, f"{c_name} biến mất khỏi oi_protocol.h"
+    assert int(c_defines[c_name]) == int(py_value)
+
+
+def test_no_orphan_scenes_in_header(c_defines):
+    c_scenes = {n for n in c_defines if n.startswith("OI_SCENE_")}
+    covered = {n for n, _ in SCENE_PAIRS}
+    assert not (c_scenes - covered), (
+        f"Cảnh mới trong oi_protocol.h chưa nhân bản sang protocol.py: "
+        f"{sorted(c_scenes - covered)}"
+    )
 
 
 def test_protocol_version_matches(c_defines):

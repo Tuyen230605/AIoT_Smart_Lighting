@@ -25,20 +25,29 @@
 #define WIFI_PASS        ""
 #endif
 #ifndef HUB_MQTT_HOST
-#define HUB_MQTT_HOST    "192.168.1.10"
+#define HUB_MQTT_HOST    "192.168.50.1"
 #endif
 #ifndef HUB_MQTT_PORT
 #define HUB_MQTT_PORT    1883
 #endif
-#ifndef AWS_MQTT_HOST
-#define AWS_MQTT_HOST    ""
+
+// Tài khoản broker nội bộ (Mosquitto có xác thực — dựng ở G2.1).
+#ifndef MQTT_USER
+#define MQTT_USER        ""
 #endif
-#define AWS_MQTT_PORT    8883
+#ifndef MQTT_PASS
+#define MQTT_PASS        ""
+#endif
+
+// Mật khẩu OTA. Để trống thì OTA bị TẮT — xem oi_ota.h.
+#ifndef OTA_PASSWORD
+#define OTA_PASSWORD     ""
+#endif
 
 #define NVS_NAMESPACE    "oi_creds"
-#define NVS_KEY_CA       "aws_ca"
-#define NVS_KEY_CERT     "aws_cert"
-#define NVS_KEY_PKEY     "aws_pkey"
+#define NVS_KEY_CA       "ca"        // CA của mạng nhà (tự ký)
+#define NVS_KEY_CERT     "cert"      // chứng chỉ thiết bị
+#define NVS_KEY_PKEY     "pkey"      // khoá riêng thiết bị
 
 // ══════════════════════════════════════════════════════════════
 //  Sơ đồ chân — ESP32 DevKit

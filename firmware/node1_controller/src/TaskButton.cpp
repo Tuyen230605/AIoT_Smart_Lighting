@@ -1,130 +1,80 @@
+/**
+ * TaskButton.cpp — Bốn nút bấm vật lý.
+ *
+ * THAY ĐỔI SO VỚI BẢN DACN (G1.1)
+ * Trước đây task này đọc rồi ghi thẳng vào biến toàn cục dùng chung giữa hai
+ * nhân. Giờ nó chỉ *mô tả ý định* và gửi qua hàng đợi. Hệ quả có thật, không
+ * phải chỉ cho gọn: khi giữ nút tăng sáng, mỗi 50 ms gửi một lệnh "+5" thay vì
+ * "đặt bằng 105" — nên dù TaskLED đang bận vẽ khung hình, không nhịp tăng nào
+ * bị nuốt mất do hai bên cùng đọc một giá trị cũ.
+ *
+ * Nút bấm là lớp phòng thủ cuối cùng (mức suy giảm L3: mất Wi-Fi hoàn toàn),
+ * nên task này không phụ thuộc vào mạng, hub hay AI.
+ */
 #include <Arduino.h>
+
 #include "Config.h"
+#include "oi_cmdbus.h"
 
-// Mượn các biến điều khiển từ hệ thống
-extern String cmdAction;
-extern String cmdColor;
-extern int cmdBrightness;
+static const unsigned long DEBOUNCE_DELAY = 200;   // chống dội cho nút nhấn-nhả
+static const unsigned long HOLD_DELAY     = 500;   // giữ quá mức này là "nhấn giữ"
+static const unsigned long HOLD_SPEED     = 50;    // nhịp lặp khi đang giữ
+static const int16_t       CLICK_STEP     = 15;
+static const int16_t       HOLD_STEP      = 5;
 
-// Danh sách 7 màu cố định để xoay vòng
-const String colorList[] = {"white", "red", "green", "blue", "yellow", "purple", "cyan"};
-const int numColors = 7;
-int currentColorIndex = 0;
+// Gom trạng thái của một nút "click và giữ" vào một chỗ, thay vì sáu biến rời.
+struct HoldButton {
+    uint8_t       pin;
+    int8_t        dir;         // +1 tăng sáng, -1 giảm sáng
+    bool          pressed;
+    unsigned long pressTime;
+    unsigned long lastRepeat;
+};
 
-// ======================================================
-// THÔNG SỐ CẤU HÌNH THỜI GIAN NHẤN NÚT
-// ======================================================
-const unsigned long DEBOUNCE_DELAY = 200; // Nghỉ 200ms chống dội cho nút Toggle/Màu
-const unsigned long HOLD_DELAY = 500;     // Giữ nút 500ms thì bắt đầu tính là "Nhấn giữ"
-const unsigned long HOLD_SPEED = 50;      // Tốc độ lướt khi đang giữ: 50ms chạy 1 lần
-const int CLICK_STEP = 15;                // Bước nhảy khi Click 1 cái
-const int HOLD_STEP = 5;                  // Bước nhảy khi Nhấn giữ (để nó trượt mượt)
-
-// Bộ nhớ chống dội phím cho 2 nút Bật/Tắt và Đổi màu
-unsigned long lastDebounceTime[2] = {0, 0}; 
-
-// Bộ nhớ trạng thái riêng cho nút Tăng Sáng
-bool isUpPressed = false;
-unsigned long upPressTime = 0;
-unsigned long upLastHoldTime = 0;
-
-// Bộ nhớ trạng thái riêng cho nút Giảm Sáng
-bool isDownPressed = false;
-unsigned long downPressTime = 0;
-unsigned long downLastHoldTime = 0;
+static void serviceHoldButton(HoldButton &b, unsigned long now) {
+    if (digitalRead(b.pin) == LOW) {
+        if (!b.pressed) {
+            b.pressed    = true;
+            b.pressTime  = now;
+            b.lastRepeat = now;
+            oiCmdPostAdjust(b.dir * CLICK_STEP, OI_SRC_BUTTON);
+        } else if (now - b.pressTime > HOLD_DELAY && now - b.lastRepeat > HOLD_SPEED) {
+            b.lastRepeat = now;
+            oiCmdPostAdjust(b.dir * HOLD_STEP, OI_SRC_BUTTON);
+        }
+    } else {
+        b.pressed = false;
+    }
+}
 
 void TaskButton(void *pvParameters) {
-    Serial.println("🔘 Task Button (Có chức năng Nhấn Giữ) đã khởi động!");
+    Serial.println("🔘 TaskButton: 4 nút vật lý đã sẵn sàng.");
 
-    // Cấu hình chân INPUT_PULLUP (Mặc định HIGH, bấm xuống là LOW)
     pinMode(PIN_BTN_TOGGLE, INPUT_PULLUP);
-    pinMode(PIN_BTN_UP, INPUT_PULLUP);
-    pinMode(PIN_BTN_DOWN, INPUT_PULLUP);
-    pinMode(PIN_BTN_COLOR, INPUT_PULLUP);
+    pinMode(PIN_BTN_UP,     INPUT_PULLUP);
+    pinMode(PIN_BTN_DOWN,   INPUT_PULLUP);
+    pinMode(PIN_BTN_COLOR,  INPUT_PULLUP);
+
+    unsigned long lastToggle = 0, lastColor = 0;
+    HoldButton up   = {PIN_BTN_UP,   +1, false, 0, 0};
+    HoldButton down = {PIN_BTN_DOWN, -1, false, 0, 0};
 
     for (;;) {
-        unsigned long currentMillis = millis();
+        unsigned long now = millis();
 
-        // ==================================================
-        // 1. NÚT BẬT / TẮT (Chỉ Click)
-        // ==================================================
-        if (digitalRead(PIN_BTN_TOGGLE) == LOW && (currentMillis - lastDebounceTime[0] > DEBOUNCE_DELAY)) {
-            if (cmdAction == "turn_off") {
-                cmdAction = "turn_on"; 
-                Serial.println("🔘 Nút: BẬT ĐÈN");
-            } else {
-                cmdAction = "turn_off"; 
-                Serial.println("🔘 Nút: TẮT ĐÈN");
-            }
-            lastDebounceTime[0] = currentMillis;
+        if (digitalRead(PIN_BTN_TOGGLE) == LOW && now - lastToggle > DEBOUNCE_DELAY) {
+            lastToggle = now;
+            oiCmdPostSimple(OI_CMD_TOGGLE, OI_SRC_BUTTON);
         }
 
-        // ==================================================
-        // 2. NÚT ĐỔI MÀU (Chỉ Click, đèn phải đang bật)
-        // ==================================================
-        if (digitalRead(PIN_BTN_COLOR) == LOW && (currentMillis - lastDebounceTime[1] > DEBOUNCE_DELAY)) {
-            if (cmdAction != "turn_off") {
-                currentColorIndex = (currentColorIndex + 1) % numColors;
-                cmdColor = colorList[currentColorIndex];
-                cmdAction = "turn_on"; 
-                Serial.println("🔘 Nút: ĐỔI MÀU -> " + cmdColor);
-            }
-            lastDebounceTime[1] = currentMillis;
+        if (digitalRead(PIN_BTN_COLOR) == LOW && now - lastColor > DEBOUNCE_DELAY) {
+            lastColor = now;
+            oiCmdPostSimple(OI_CMD_NEXT_COLOR, OI_SRC_BUTTON);
         }
 
-        // ==================================================
-        // 3. NÚT TĂNG SÁNG (Click & Hold)
-        // ==================================================
-        if (digitalRead(PIN_BTN_UP) == LOW && cmdAction != "turn_off") {
-            if (!isUpPressed) { // Vừa mới dập nút xuống
-                isUpPressed = true;
-                upPressTime = currentMillis;
-                upLastHoldTime = currentMillis;
+        serviceHoldButton(up,   now);
+        serviceHoldButton(down, now);
 
-                // Xử lý ngay lệnh Click đầu tiên
-                cmdBrightness = constrain(cmdBrightness + CLICK_STEP, 0, 255);
-                if (cmdAction == "turn_off") cmdAction = "turn_on"; // Ép sáng nếu đang tắt
-                Serial.printf("🔘 Nút: Click TĂNG SÁNG (%d)\n", cmdBrightness);
-            } 
-            else { // Nút vẫn đang bị đè (Hold)
-                if (currentMillis - upPressTime > HOLD_DELAY) { // Đã đè quá 0.5s
-                    if (currentMillis - upLastHoldTime > HOLD_SPEED) { // Cứ 50ms lại tăng 1 nhịp
-                        cmdBrightness = constrain(cmdBrightness + HOLD_STEP, 0, 255);
-                        Serial.printf("🔘 Nút: Giữ TĂNG SÁNG trơn tru (%d)\n", cmdBrightness);
-                        upLastHoldTime = currentMillis;
-                    }
-                }
-            }
-        } else {
-            isUpPressed = false; // Người dùng đã thả tay
-        }
-
-        // ==================================================
-        // 4. NÚT GIẢM SÁNG (Click & Hold)
-        // ==================================================
-        if (digitalRead(PIN_BTN_DOWN) == LOW && cmdAction != "turn_off") {
-            if (!isDownPressed) { 
-                isDownPressed = true;
-                downPressTime = currentMillis;
-                downLastHoldTime = currentMillis;
-
-                cmdBrightness = constrain(cmdBrightness - CLICK_STEP, 0, 255);
-                Serial.printf("🔘 Nút: Click GIẢM SÁNG (%d)\n", cmdBrightness);
-            } 
-            else { 
-                if (currentMillis - downPressTime > HOLD_DELAY) {
-                    if (currentMillis - downLastHoldTime > HOLD_SPEED) {
-                        cmdBrightness = constrain(cmdBrightness - HOLD_STEP, 0, 255);
-                        Serial.printf("🔘 Nút: Giữ GIẢM SÁNG trơn tru (%d)\n", cmdBrightness);
-                        downLastHoldTime = currentMillis;
-                    }
-                }
-            }
-        } else {
-            isDownPressed = false; 
-        }
-
-        // Nghỉ 20ms thay vì 50ms để bắt tín hiệu Nhấn giữ cho nhạy và mượt hơn
-        vTaskDelay(20 / portTICK_PERIOD_MS);
+        vTaskDelay(BUTTON_SCAN_MS / portTICK_PERIOD_MS);
     }
 }

@@ -1,157 +1,152 @@
+/**
+ * Task_Mic.cpp — Lớp phản xạ: nhận dạng từ khoá trên chính vi điều khiển.
+ *
+ * BA THAY ĐỔI SO VỚI BẢN DACN
+ *
+ * G1.1 — không còn ghi vào biến toàn cục dùng chung giữa hai nhân. Task này
+ *        chạy trên Core 0, TaskLED chạy trên Core 1; mọi lệnh đi qua hàng đợi.
+ *
+ * G1.2 — suy luận LIÊN TỤC thay vì từng cửa sổ 1 giây rời rạc.
+ *        Bản cũ ngừng nạp mẫu trong lúc AI chạy (`buf_ready == 1`), nên âm
+ *        thanh phát ra đúng lúc đó bị vứt: từ khoá rơi vào ranh giới cửa sổ
+ *        không bao giờ được nghe thấy. Bản này dùng hai bộ đệm luân phiên —
+ *        micro ghi vào bộ đệm A trong khi bộ phân loại đọc bộ đệm B — và gọi
+ *        run_classifier_continuous() bốn lần mỗi giây trên các lát 250 ms.
+ *        Mô hình vốn đã khai báo SLICES_PER_MODEL_WINDOW = 4 nhưng mã cũ
+ *        chưa hề dùng tới.
+ *
+ * G1.3 — bỏ hẳn noise gate phi tuyến (cắt mẫu < 40 về 0 rồi nhân phần còn lại
+ *        ×8). Đó là một hàm gián đoạn: nó sinh hài bậc cao tại mỗi điểm cắt và
+ *        làm clip int16 khi nói to, khiến phổ MFCC không còn giống dữ liệu đã
+ *        huấn luyện trên Edge Impulse — tức là bộ lọc đang làm hại chính mô
+ *        hình mà nó định giúp. Bộ lọc thông cao IIR được giữ lại vì nó đúng và
+ *        cần thiết (khử lệch DC của INMP441). Việc chống ồn chuyển sang khâu
+ *        tăng cường dữ liệu huấn luyện: cộng nhiễu nền thu tại chính căn phòng.
+ */
 #include <Arduino.h>
-#include "Config.h"
-#include <Oi_Voice_Assistant_inferencing.h> // NHỚ SỬA TÊN THƯ VIỆN CỦA TUYỀN
+#include <Oi_Voice_Assistant_inferencing.h>
+
+#include "driver/i2s.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/i2s.h"
 
-// ==========================================================
-// 1. GỌI CÁC BIẾN CẦU NỐI TỪ TASK LED SANG ĐỂ ĐIỀU KHIỂN
-// ==========================================================
-extern String cmdAction;
-extern String cmdColor;
-extern int cmdBrightness;
+#include "Config.h"
+#include "oi_cmdbus.h"
 
-#define PIN_LED_INDICATOR 3 
+// Số mẫu của một lát cắt. Mô hình khai báo 4 lát cho mỗi cửa sổ 1 giây.
+#ifndef EI_CLASSIFIER_SLICE_SIZE
+#define EI_CLASSIFIER_SLICE_SIZE \
+    (EI_CLASSIFIER_RAW_SAMPLE_COUNT / EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW)
+#endif
 
-// --- KHỐI KHAI BÁO HÀM AI CỦA EDGE IMPULSE ---
 static bool microphone_inference_start(uint32_t n_samples);
 static bool microphone_inference_record(void);
-static int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr);
-static void microphone_inference_end(void);
-static int i2s_init(uint32_t sampling_rate);
-static int i2s_deinit(void);
+static int  microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr);
+static int  i2s_init(uint32_t sampling_rate);
 
+// Hai bộ đệm luân phiên: đây chính là thứ khiến không còn đoạn âm thanh nào
+// bị vứt trong lúc bộ phân loại đang chạy (G1.2).
 typedef struct {
-    int16_t *buffer;
-    uint8_t buf_ready;
+    int16_t *buffers[2];
+    uint8_t  buf_select;
+    uint8_t  buf_ready;
     uint32_t buf_count;
     uint32_t n_samples;
 } inference_t;
 
-static inference_t inference;
+static inference_t   inference;
 static const uint32_t sample_buffer_size = 2048;
-static signed short sampleBuffer[sample_buffer_size];
-static bool record_status = true;
+static signed short   sampleBuffer[sample_buffer_size];
+static volatile bool  record_status = true;
 
 enum VoiceState { STATE_IDLE, STATE_LISTENING };
 
-// ==========================================================
-// 2. TASK MIC: BỘ NÃO AI VỚI MÁY TRẠNG THÁI (FSM) ĐA LỆNH 10S
-// ==========================================================
+// ══════════════════════════════════════════════════════════════
+//  Dựng lệnh gửi sang TaskLED
+// ══════════════════════════════════════════════════════════════
+static void postSolidWhite(void) {
+    OiLightState s = oiStateBoot();
+    s.mode       = OI_MODE_SOLID;
+    s.brightness = 100;
+    s.cct        = 4000;
+    s.rgb        = 0xFFFFFF;
+    s.src        = OI_SRC_VOICE_LOCAL;
+    oiCmdPostState(s);
+}
 
-// void TaskMic(void *pvParameters) {
-//     Serial.println("🎙️ Bật chế độ Ghi âm Raw Audio. Chờ Python kết nối...");
-    
-//     // ==========================================================
-//     // 1. CẤU HÌNH VÀ BẬT MICRO I2S TRƯỚC KHI ĐỌC (CỰC KỲ QUAN TRỌNG)
-//     // ==========================================================
-//     i2s_config_t i2s_config = {
-//         .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
-//         .sample_rate = 16000,
-//         .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
-//         .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
-//         .communication_format = I2S_COMM_FORMAT_STAND_I2S,
-//         .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-//         .dma_buf_count = 8,
-//         .dma_buf_len = 512,
-//         .use_apll = false,
-//         .tx_desc_auto_clear = false,
-//         .fixed_mclk = 0
-//     };
+static void postOff(void) {
+    OiLightState s = oiStateBoot();
+    s.mode = OI_MODE_OFF;
+    s.src  = OI_SRC_VOICE_LOCAL;
+    oiCmdPostState(s);
+}
 
-//     i2s_pin_config_t pin_config = {
-//         .bck_io_num = PIN_I2S_SCK,
-//         .ws_io_num = PIN_I2S_WS,
-//         .data_out_num = I2S_PIN_NO_CHANGE,
-//         .data_in_num = PIN_I2S_SD
-//     };
-
-//     // Khởi động Driver I2S ở cổng 0
-//     i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
-//     i2s_set_pin(I2S_NUM_0, &pin_config);
-//     i2s_start(I2S_NUM_0);
-
-//     // ==========================================================
-//     // 2. VÒNG LẶP ĐẨY DỮ LIỆU THÔ LÊN PYTHON
-//     // ==========================================================
-//     int16_t sampleBuffer[512]; 
-//     size_t bytesRead;
-
-//     for (;;) {
-//         // Đọc dữ liệu thô từ I2S
-//         i2s_read(I2S_NUM_0, &sampleBuffer, sizeof(sampleBuffer), &bytesRead, portMAX_DELAY);
-        
-//         if (bytesRead > 0) {
-//             // Khuếch đại âm lượng lên 8 lần (để âm thanh không bị lí nhí)
-//             for (int x = 0; x < bytesRead / 2; x++) {
-//                 sampleBuffer[x] = (int16_t)(sampleBuffer[x]) * 8;
-//             }
-
-//             // Đẩy thẳng dữ liệu byte lên Serial
-//             Serial.write((const uint8_t*)sampleBuffer, bytesRead);
-//         }
-//     }
-// }
+static void postMusic(void) {
+    OiLightState s = oiStateBoot();
+    s.mode       = OI_MODE_MUSIC;
+    s.scene      = OI_SCENE_MUSIC_EDM;
+    s.brightness = 150;
+    s.src        = OI_SRC_VOICE_LOCAL;
+    oiCmdPostState(s);
+}
 
 void TaskMic(void *pvParameters) {
-    Serial.println("🎤 Khởi động Bộ não AI (Tích hợp DSP: VAD, Noise Gate, DC Filter)...");
+    Serial.println("🎤 TaskMic: lớp phản xạ (suy luận liên tục 250 ms/lát)...");
 
     pinMode(PIN_LED_INDICATOR, OUTPUT);
     digitalWrite(PIN_LED_INDICATOR, LOW);
 
-    if (!microphone_inference_start(EI_CLASSIFIER_RAW_SAMPLE_COUNT)) {
-        Serial.println("ERR: Lỗi khởi động Micro cho AI!");
+    if (!microphone_inference_start(EI_CLASSIFIER_SLICE_SIZE)) {
+        Serial.println("❌ Không khởi động được micro cho AI.");
         vTaskDelete(NULL);
     }
 
-    VoiceState current_voice_state = STATE_IDLE;
-    unsigned long listening_start_time = 0;
-    const unsigned long LISTENING_TIMEOUT = 10000; 
-    static String previousAction = "turn_off";
+    run_classifier_init();
+
+    VoiceState    voice_state         = STATE_IDLE;
+    unsigned long listening_start     = 0;
+    uint16_t      silent_slices       = 0;
+    bool          window_primed       = false;
 
     for (;;) {
-        // 1. Chờ Micro thu đủ 1 khung âm thanh (1 giây)
-        bool m = microphone_inference_record();
-        if (!m) continue;
-
-        // ----------------------------------------------------------------
-        // 🚀 KỸ THUẬT 3: VAD (Voice Activity Detection) - ĐO NĂNG LƯỢNG
-        // ----------------------------------------------------------------
-        unsigned long total_energy = 0;
-        for (int i = 0; i < EI_CLASSIFIER_RAW_SAMPLE_COUNT; i++) {
-            // Lấy trị tuyệt đối biên độ để tính tổng năng lượng
-            total_energy += abs(inference.buffer[i]); 
-        }
-        unsigned long avg_energy = total_energy / EI_CLASSIFIER_RAW_SAMPLE_COUNT;
-
-        // Nếu năng lượng trung bình < 100 (tức là phòng đang im lặng), 
-        // BỎ QUA LUÔN hàm AI để tiết kiệm 100% CPU và tránh đoán bừa.
-        if (avg_energy < 50) { 
-            // Môi trường im lặng, dọn xô để hứng khung mới rồi bỏ qua AI
-            inference.buf_count = 0;
-            inference.buf_ready = 0;
-            continue; 
+        // Chờ một lát 250 ms. Micro vẫn tiếp tục ghi vào bộ đệm còn lại.
+        if (!microphone_inference_record()) {
+            Serial.println("⚠ Tràn bộ đệm âm thanh — bộ phân loại chạy không kịp.");
+            continue;
         }
 
-        // 2. Chuyển dữ liệu vào dạng Tín hiệu cho AI hiểu
+        // ── VAD năng lượng: chặn suy luận khi phòng im lặng ──
+        // Không phải AI, và báo cáo không được gọi nó là AI. Nó chỉ là một
+        // heuristic rẻ đặt trước một mô hình đắt; giá trị của nó là tỉ lệ lần
+        // gọi mô hình cắt được, và đó là con số phải đo chứ không phải khẳng định.
+        const int16_t *slice = inference.buffers[inference.buf_select ^ 1];
+        uint64_t energy = 0;
+        for (uint32_t i = 0; i < EI_CLASSIFIER_SLICE_SIZE; i++) energy += abs(slice[i]);
+        uint32_t avg_energy = (uint32_t)(energy / EI_CLASSIFIER_SLICE_SIZE);
+
+        if (avg_energy < VAD_ENERGY_THRESHOLD) {
+            silent_slices++;
+            // Im lặng đủ lâu thì dọn cửa sổ trượt, để câu nói sau không bị ghép
+            // với đuôi của câu trước.
+            if (window_primed && silent_slices >= VAD_SILENCE_SLICES) {
+                run_classifier_init();
+                window_primed = false;
+            }
+            continue;
+        }
+        silent_slices = 0;
+        window_primed = true;
+
         signal_t signal;
-        signal.total_length = EI_CLASSIFIER_RAW_SAMPLE_COUNT;
-        signal.get_data = &microphone_audio_signal_get_data;
-        ei_impulse_result_t result = { 0 };
+        signal.total_length = EI_CLASSIFIER_SLICE_SIZE;
+        signal.get_data     = &microphone_audio_signal_get_data;
 
-        // 3. AI CHẠY PHÂN TÍCH (Chỉ chạy khi có người đang thực sự nói do VAD đánh thức)
-        EI_IMPULSE_ERROR r = run_classifier(&signal, &result, false);
+        ei_impulse_result_t result = {0};
+        if (run_classifier_continuous(&signal, &result, false) != EI_IMPULSE_OK) continue;
 
-        // Dọn xô để hứng khung mới ngay sau khi AI chạy xong, dù có thành công hay không, để sẵn sàng cho khung tiếp theo
-        inference.buf_count = 0;
-        inference.buf_ready = 0;
-        if (r != EI_IMPULSE_OK) continue;
-
-        // 4. TÌM TỪ CÓ ĐIỂM XÁC SUẤT CAO NHẤT
-        String best_word = "noise";
-        float max_score = 0.0;
-        
+        // ── Chọn nhãn điểm cao nhất ──
+        const char *best_word = "noise";
+        float       max_score = 0.0f;
         for (size_t ix = 0; ix < EI_CLASSIFIER_LABEL_COUNT; ix++) {
             if (result.classification[ix].value > max_score) {
                 max_score = result.classification[ix].value;
@@ -159,192 +154,167 @@ void TaskMic(void *pvParameters) {
             }
         }
 
-        // 5. XỬ LÝ LOGIC MÁY TRẠNG THÁI (Ngưỡng tự tin > 85%)
-        if (max_score > 0.85) {
-            if (current_voice_state == STATE_IDLE) {
-                if (best_word == "alo_oi") {
-                    Serial.println("🔔 Đã nghe thấy Alo Oi! Mở tai 10s...");
-                    previousAction = cmdAction; 
-                    current_voice_state = STATE_LISTENING;
-                    listening_start_time = millis(); 
-                    digitalWrite(PIN_LED_INDICATOR, HIGH); 
-                }
-            } 
-            else if (current_voice_state == STATE_LISTENING) {
-                if (best_word == "batden") {
-                    Serial.println("✅ Lệnh: BẬT ĐÈN!");
-                    cmdAction = "turn_on";
-                    cmdColor = "white"; 
-                    cmdBrightness = 100;
-                    previousAction = cmdAction;
-                } 
-                else if (best_word == "tatden") {
-                    Serial.println("✅ Lệnh: TẮT ĐÈN!");
-                    cmdAction = "turn_off";
-                    previousAction = cmdAction;
-                }
-                else if (best_word == "nhaynhac") {
-                    Serial.println("✅ Lệnh: NHÁY NHẠC!");
-                    cmdAction = "music";
-                    previousAction = cmdAction;
-                }
-                else if (best_word == "alo_oi") {
-                    Serial.println("⏳ Gia hạn thời gian nghe thêm 10s...");
-                    listening_start_time = millis();
-                }
-                else if (best_word == "tangsang") { 
-                    cmdBrightness = constrain(cmdBrightness + 15, 0, 255);
-                    cmdAction = previousAction; 
-                    Serial.printf("💡 Tăng sáng: %d\n", cmdBrightness);
-                }
-                else if (best_word == "giamsang") { 
-                    cmdBrightness = constrain(cmdBrightness - 15, 0, 255);
-                    cmdAction = previousAction;
-                    Serial.printf("💡 Giảm sáng: %d\n", cmdBrightness);
+        // ── Máy trạng thái hội thoại ──
+        // Hai ngưỡng khác nhau: từ khoá thức đặt cao để chống thức nhầm giữa
+        // đêm; lệnh sau khi đã thức hạ xuống vì đã có ngữ cảnh (oi_protocol.h).
+        if (voice_state == STATE_IDLE) {
+            if (max_score >= OI_CONF_WAKE_MIN && strcmp(best_word, "alo_oi") == 0) {
+                Serial.println("🔔 Nghe thấy 'Alo Oi' — mở cửa sổ nghe.");
+                voice_state     = STATE_LISTENING;
+                listening_start = millis();
+                digitalWrite(PIN_LED_INDICATOR, HIGH);
+            }
+        } else {   // STATE_LISTENING
+            if (max_score >= OI_CONF_CMD_MIN) {
+                if (strcmp(best_word, "batden") == 0) {
+                    Serial.println("✅ Lệnh: BẬT ĐÈN");
+                    postSolidWhite();
+                } else if (strcmp(best_word, "tatden") == 0) {
+                    Serial.println("✅ Lệnh: TẮT ĐÈN");
+                    postOff();
+                } else if (strcmp(best_word, "nhaynhac") == 0) {
+                    Serial.println("✅ Lệnh: NHÁY NHẠC");
+                    postMusic();
+                } else if (strcmp(best_word, "tangsang") == 0) {
+                    Serial.println("✅ Lệnh: TĂNG SÁNG");
+                    oiCmdPostAdjust(+15, OI_SRC_VOICE_LOCAL);
+                } else if (strcmp(best_word, "giamsang") == 0) {
+                    Serial.println("✅ Lệnh: GIẢM SÁNG");
+                    oiCmdPostAdjust(-15, OI_SRC_VOICE_LOCAL);
+                } else if (strcmp(best_word, "alo_oi") == 0) {
+                    Serial.println("⏳ Gia hạn cửa sổ nghe.");
+                    listening_start = millis();
                 }
             }
-        }
 
-        // 6. KIỂM TRA HẾT GIỜ (TIMEOUT 10 GIÂY)
-        if (current_voice_state == STATE_LISTENING) {
-            if (millis() - listening_start_time > LISTENING_TIMEOUT) {
-                Serial.println("⏰ Hết 10s. Đóng mic!");
-                digitalWrite(PIN_LED_INDICATOR, LOW); 
-                current_voice_state = STATE_IDLE;
+            if (millis() - listening_start > OI_LISTEN_WINDOW_MS) {
+                Serial.println("⏰ Hết cửa sổ nghe.");
+                digitalWrite(PIN_LED_INDICATOR, LOW);
+                voice_state = STATE_IDLE;
             }
         }
-
-        vTaskDelay(10 / portTICK_PERIOD_MS); 
     }
 }
 
-// ==========================================================
-// 3. KHỐI CÁC HÀM CẤU HÌNH I2S VÀ XỬ LÝ ÂM THANH
-// ==========================================================
+// ══════════════════════════════════════════════════════════════
+//  Thu âm và tiền xử lý
+// ══════════════════════════════════════════════════════════════
 static void audio_inference_callback(uint32_t n_bytes) {
-    for(int i = 0; i < n_bytes>>1; i++) {
-        // CHỈ NẠP THÊM ÂM THANH NẾU AI ĐÃ ĐỌC XONG (buf_ready == 0)
-        if (inference.buf_ready == 0) {
-            inference.buffer[inference.buf_count++] = sampleBuffer[i];
-            if(inference.buf_count >= inference.n_samples) {
-                inference.buf_ready = 1; 
-                // Không reset buf_count ở đây nữa để giữ nguyên dữ liệu cho AI
-            }
+    for (uint32_t i = 0; i < n_bytes >> 1; i++) {
+        inference.buffers[inference.buf_select][inference.buf_count++] = sampleBuffer[i];
+
+        if (inference.buf_count >= inference.n_samples) {
+            // Đổi bộ đệm và báo có lát mới. KHÔNG dừng việc nạp mẫu như bản cũ.
+            inference.buf_select ^= 1;
+            inference.buf_count   = 0;
+            inference.buf_ready   = 1;
         }
     }
 }
 
-static void capture_samples(void* arg) {
+static void capture_samples(void *arg) {
     const int32_t i2s_bytes_to_read = (uint32_t)arg;
     size_t bytes_read = i2s_bytes_to_read;
 
-    // Biến trạng thái tĩnh cho bộ lọc IIR (High-pass filter)
-    static float prev_raw_sample = 0.0f;
-    static float prev_clean_sample = 0.0f;
+    // Trạng thái của bộ lọc thông cao IIR bậc 1 — khử lệch DC của INMP441.
+    static float prev_raw   = 0.0f;
+    static float prev_clean = 0.0f;
 
     while (record_status) {
-        i2s_read((i2s_port_t)1, (void*)sampleBuffer, i2s_bytes_to_read, &bytes_read, 100);
+        i2s_read((i2s_port_t)I2S_PORT_NUM, (void *)sampleBuffer,
+                 i2s_bytes_to_read, &bytes_read, 100);
 
-        if (bytes_read > 0 && bytes_read >= i2s_bytes_to_read) {
-            for (int x = 0; x < i2s_bytes_to_read/2; x++) {
-                
+        if (bytes_read > 0 && bytes_read >= (size_t)i2s_bytes_to_read) {
+            for (int x = 0; x < i2s_bytes_to_read / 2; x++) {
                 float raw = (float)sampleBuffer[x];
 
-                // ----------------------------------------------------------------
-                // 🚀 KỸ THUẬT 1: LỌC THÀNH PHẦN DC (HIGH-PASS FILTER BẬC 1)
-                // Công thức: y[n] = x[n] - x[n-1] + 0.995 * y[n-1]
-                // ----------------------------------------------------------------
-                float clean = raw - prev_raw_sample + 0.995f * prev_clean_sample;
-                
-                // Lưu lại trạng thái cho chu kỳ kế tiếp
-                prev_raw_sample = raw;
-                prev_clean_sample = clean;
+                // y[n] = x[n] - x[n-1] + 0.995·y[n-1]
+                float clean = raw - prev_raw + 0.995f * prev_clean;
+                prev_raw    = raw;
+                prev_clean  = clean;
 
-                int16_t processed_sample = (int16_t)clean;
-
-                // ----------------------------------------------------------------
-                // 🚀 KỸ THUẬT 2: NOISE GATE (CỔNG CHỐNG ỒN)
-                // ----------------------------------------------------------------
-                const int NOISE_GATE_THRESHOLD = 40; // Ngưỡng biên độ cắt nhiễu
-                
-                if (abs(processed_sample) < NOISE_GATE_THRESHOLD) {
-                    processed_sample = 0; // Nếu nhỏ hơn ngưỡng, triệt tiêu về 0 (Xóa tiếng xì xào)
-                } else {
-                    processed_sample = processed_sample * 8; // Chỉ khuếch đại khi có giọng nói lớn
-                }
-
-                sampleBuffer[x] = processed_sample;
+                // G1.3: đường tín hiệu dừng ở đây. Không cắt ngưỡng, không nhân
+                // hệ số — mọi biến đổi phi tuyến đều làm lệch phổ MFCC so với
+                // dữ liệu đã huấn luyện.
+                sampleBuffer[x] = (int16_t)constrain(clean, -32768.0f, 32767.0f);
             }
-
-            if (record_status) {
-                audio_inference_callback(i2s_bytes_to_read);
-            } else {
-                break;
-            }
+            audio_inference_callback(i2s_bytes_to_read);
         }
     }
     vTaskDelete(NULL);
 }
 
-// ... (Các hàm i2s_init, i2s_deinit, microphone_inference_start Tuyền giữ nguyên y hệt như cũ nhé, Oi không chép lại cho đỡ dài) ...
 static bool microphone_inference_start(uint32_t n_samples) {
-    inference.buffer = (int16_t *)malloc(n_samples * sizeof(int16_t));
-    if(inference.buffer == NULL) return false;
+    inference.buffers[0] = (int16_t *)malloc(n_samples * sizeof(int16_t));
+    inference.buffers[1] = (int16_t *)malloc(n_samples * sizeof(int16_t));
+    if (inference.buffers[0] == NULL || inference.buffers[1] == NULL) {
+        free(inference.buffers[0]);
+        free(inference.buffers[1]);
+        return false;
+    }
+
+    inference.buf_select = 0;
     inference.buf_count  = 0;
-    inference.n_samples  = n_samples;
     inference.buf_ready  = 0;
-    if (i2s_init(EI_CLASSIFIER_FREQUENCY)) ei_printf("Failed to start I2S!");
+    inference.n_samples  = n_samples;
+
+    if (i2s_init(EI_CLASSIFIER_FREQUENCY)) {
+        ei_printf("Failed to start I2S!\n");
+        return false;
+    }
     ei_sleep(100);
+
     record_status = true;
-    xTaskCreate(capture_samples, "CaptureSamples", 1024 * 32, (void*)sample_buffer_size, 10, NULL);
+    xTaskCreatePinnedToCore(capture_samples, "capture", STACK_CAPTURE,
+                            (void *)sample_buffer_size, PRIO_CAPTURE, NULL, CORE_AI);
     return true;
 }
 
+/**
+ * Chờ một lát mới. Trả về false nếu lát trước chưa kịp xử lý xong đã bị lát
+ * sau đè lên — dấu hiệu bộ phân loại chạy chậm hơn micro, phải biết để còn
+ * chỉnh, chứ không được im lặng bỏ qua.
+ */
 static bool microphone_inference_record(void) {
-    bool ret = true;
+    bool ok = true;
+
+    if (inference.buf_ready == 1) ok = false;
+
     while (inference.buf_ready == 0) {
-        vTaskDelay(10 / portTICK_PERIOD_MS); // Nghỉ 10ms chờ xô đầy
+        vTaskDelay(1 / portTICK_PERIOD_MS);
     }
-    return ret;
+    inference.buf_ready = 0;
+    return ok;
 }
 
 static int microphone_audio_signal_get_data(size_t offset, size_t length, float *out_ptr) {
-    numpy::int16_to_float(&inference.buffer[offset], out_ptr, length);
+    // Đọc bộ đệm KHÔNG đang được micro ghi vào.
+    numpy::int16_to_float(&inference.buffers[inference.buf_select ^ 1][offset], out_ptr, length);
     return 0;
-}
-
-static void microphone_inference_end(void) {
-    i2s_deinit();
-    ei_free(inference.buffer);
 }
 
 static int i2s_init(uint32_t sampling_rate) {
     i2s_config_t i2s_config = {
-        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_TX),
-        .sample_rate = sampling_rate,
-        .bits_per_sample = (i2s_bits_per_sample_t)16,
-        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT, 
+        .mode                 = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
+        .sample_rate          = sampling_rate,
+        .bits_per_sample      = (i2s_bits_per_sample_t)16,
+        .channel_format       = I2S_CHANNEL_FMT_ONLY_LEFT,
         .communication_format = I2S_COMM_FORMAT_STAND_I2S,
-        .intr_alloc_flags = 0,
-        .dma_buf_count = 8,
-        .dma_buf_len = 512,
-        .use_apll = false,
-        .tx_desc_auto_clear = false,
-        .fixed_mclk = -1,
+        .intr_alloc_flags     = 0,
+        .dma_buf_count        = 8,
+        .dma_buf_len          = 512,
+        .use_apll             = false,
+        .tx_desc_auto_clear   = false,
+        .fixed_mclk           = -1,
     };
     i2s_pin_config_t pin_config = {
-        .bck_io_num = PIN_I2S_SCK,     
-        .ws_io_num = PIN_I2S_WS,       
-        .data_out_num = -1,            
-        .data_in_num = PIN_I2S_SD      
+        .bck_io_num   = PIN_I2S_SCK,
+        .ws_io_num    = PIN_I2S_WS,
+        .data_out_num = I2S_PIN_NO_CHANGE,
+        .data_in_num  = PIN_I2S_SD,
     };
-    esp_err_t ret = i2s_driver_install((i2s_port_t)1, &i2s_config, 0, NULL);
-    ret = i2s_set_pin((i2s_port_t)1, &pin_config);
-    ret = i2s_zero_dma_buffer((i2s_port_t)1);
-    return int(ret);
-}
 
-static int i2s_deinit(void) {
-    i2s_driver_uninstall((i2s_port_t)1); 
-    return 0;
+    if (i2s_driver_install((i2s_port_t)I2S_PORT_NUM, &i2s_config, 0, NULL) != ESP_OK) return -1;
+    if (i2s_set_pin((i2s_port_t)I2S_PORT_NUM, &pin_config) != ESP_OK) return -1;
+    return (int)i2s_zero_dma_buffer((i2s_port_t)I2S_PORT_NUM);
 }
