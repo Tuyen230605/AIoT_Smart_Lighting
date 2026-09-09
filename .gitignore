@@ -102,3 +102,11 @@ docs/thesis/*.out
 docs/thesis/*.toc
 ~$*.docx
 ~$*.xlsx
+
+# Mật khẩu broker — sinh bằng mosquitto_passwd, KHÔNG BAO GIỜ commit
+hub/config/mosquitto/passwd
+hub/ui/vendor/
+hub/ui/config.js
+
+# File ghi chú mật khẩu cá nhân — KHÔNG BAO GIỜ commit
+GHI-CHU-MAT-KHAU.md

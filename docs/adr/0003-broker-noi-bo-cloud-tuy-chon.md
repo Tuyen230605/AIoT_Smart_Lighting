@@ -1,6 +1,14 @@
 # ADR 0003 — Broker nội bộ là đường chính, đám mây là tuỳ chọn
 
-**Trạng thái:** Chấp nhận
+**Trạng thái:** Thay thế một phần bởi [ADR 0004](0004-bo-phu-thuoc-dam-may.md)
+
+> **Phần còn hiệu lực:** broker nội bộ là đường chính; luật hiện diện → đèn cổng nằm
+> trong firmware Node 2; hub chỉ ghi đè trong một khoảng có hạn.
+>
+> **Phần đã bị thay thế:** vai trò "kênh truy cập từ xa và lưu vết" của AWS IoT Core và
+> dịch vụ cầu nối `oi-bridge`. ADR 0004 bỏ hẳn AWS và chuyển nhu cầu truy cập từ xa
+> sang đường hầm mạng riêng. Mục "Phương án đã cân nhắc" bên dưới ghi *"bỏ hẳn đám mây —
+> bị loại"*; chính kết luận đó đã được đảo lại, lý do nằm trong ADR 0004.
 
 ## Bối cảnh
 

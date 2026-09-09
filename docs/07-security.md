@@ -54,8 +54,13 @@ riêng dưới dạng báo cáo và kho cũ vẫn còn để tra cứu.
 |---|---|---|
 | SSID / mật khẩu Wi-Fi | `firmware/<node>/secrets.ini` | Cờ biên dịch `-D`, file nằm trong `.gitignore` |
 | Endpoint MQTT | `secrets.ini` | Cờ biên dịch |
-| Chứng chỉ và khoá riêng AWS | Máy của người phát triển, ngoài kho mã | Nạp vào phân vùng NVS `oi_creds` bằng công cụ riêng |
+| Chứng chỉ và khoá riêng TLS của node | Máy của người phát triển, ngoài kho mã | Nạp vào phân vùng NVS `oi_creds` bằng công cụ riêng |
 | Mật khẩu broker nội bộ | `hub/.env` | Biến môi trường, file nằm trong `.gitignore` |
+| Mật khẩu OTA | `secrets.ini` | Cờ biên dịch; để trống thì OTA bị **tắt hẳn**, không chạy ở chế độ mở |
+
+> Từ [ADR 0004](adr/0004-bo-phu-thuoc-dam-may.md), chứng chỉ trong `oi_creds` là chứng chỉ
+> TLS của **chính mạng nhà** (CA tự ký trên hub), không còn là chứng chỉ của nhà cung cấp
+> đám mây. Cơ chế nạp không đổi; chỉ đổi thứ được nạp.
 
 **Vì sao chứng chỉ đi qua NVS chứ không qua cờ biên dịch:** cờ biên dịch nhúng chuỗi
 vào ảnh firmware, nên bất kỳ ai đọc được flash (kể cả qua `esptool read_flash`) đều lấy

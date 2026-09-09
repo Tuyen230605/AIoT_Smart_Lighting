@@ -10,4 +10,6 @@ vì sao chọn cách này, tài liệu này là câu trả lời sẵn có.
 |---|---|---|
 | [0001](0001-kien-truc-ai-hai-lop.md) | Kiến trúc AI hai lớp phản xạ–suy luận | Chấp nhận |
 | [0002](0002-hoc-phan-du-cho-so-thich.md) | Học phần dư thay vì học trực tiếp cho AI-6 | Chấp nhận |
-| [0003](0003-broker-noi-bo-cloud-tuy-chon.md) | Broker nội bộ, đám mây là tuỳ chọn | Chấp nhận |
+| [0003](0003-broker-noi-bo-cloud-tuy-chon.md) | Broker nội bộ, đám mây là tuỳ chọn | Thay thế một phần bởi 0004 |
+| [0004](0004-bo-phu-thuoc-dam-may.md) | Bỏ phụ thuộc đám mây, giữ lại đường nối | Chấp nhận |
+| [0005](0005-luong-camera-chu-giai.md) | Luồng camera có chú giải trên dashboard | Chấp nhận |
