@@ -44,6 +44,7 @@ typedef struct {
 } GateState;
 
 static QueueHandle_t qRadar = NULL;   // TaskRadar → TaskLogic (ghi đè, 1 ô)
+static QueueHandle_t qRadarTele = NULL; // TaskRadar → TaskNet (ghi đè, 1 ô) — số đo gửi lên hub
 static QueueHandle_t qState = NULL;   // TaskLogic → TaskNet
 static QueueHandle_t qHubCmd = NULL;  // TaskNet   → TaskLogic
 static QueueHandle_t qLux = NULL;     // TaskNet   → TaskLogic (lux từ node 1)
@@ -73,6 +74,7 @@ static void TaskRadar(void *pv) {
             r.dist_moving = r.presence ? radar.movingTargetDistance() : 0;
             r.dist_static = r.presence ? radar.stationaryTargetDistance() : 0;
             xQueueOverwrite(qRadar, &r);
+            xQueueOverwrite(qRadarTele, &r);
         }
 
         vTaskDelay(RADAR_POLL_MS / portTICK_PERIOD_MS);
@@ -242,6 +244,28 @@ static void publishState(const GateState &gs) {
     client.publish(topicState, (const uint8_t *)buf, n, true);
 }
 
+/**
+ * Số đo radar cho hub (oi-context, dashboard).
+ *
+ * Luật đèn cổng KHÔNG cần bản tin này — nó chạy ngay trên chip. Nhưng thiếu nó
+ * thì hub không biết có người: oi-context chỉ còn camera, và phép hợp nhất
+ * radar–thị giác (C3) mất hẳn một nguồn. Bản DACN gửi oi/radar/status mỗi giây;
+ * lúc tách task ở G1.6 đường này bị rơi mất.
+ */
+static void publishRadar(const RadarReading &r) {
+    if (!client.connected()) return;
+
+    JsonDocument doc;
+    doc[OI_K_NODE]        = THING_NAME;
+    doc[OI_K_PRESENCE]    = r.presence;
+    doc[OI_K_DIST_MOVING] = r.dist_moving;
+    doc[OI_K_DIST_STATIC] = r.dist_static;
+
+    char buf[128];
+    size_t n = serializeJson(doc, buf);
+    client.publish(topicTele, (const uint8_t *)buf, n, false);
+}
+
 static bool mqttConnect(void) {
     const char *willMsg = "{\"" OI_K_NODE "\":\"" THING_NAME "\",\"online\":false}";
     bool ok = client.connect(THING_NAME,
@@ -280,6 +304,8 @@ static void TaskNet(void *pv) {
     client.setKeepAlive(15);
 
     uint32_t lastHealth = 0;
+    uint32_t lastTele   = 0;
+    bool     lastPres   = false;
     bool otaStarted = false;
 
     for (;;) {
@@ -314,6 +340,16 @@ static void TaskNet(void *pv) {
 
         GateState gs;
         while (xQueueReceive(qState, &gs, 0) == pdTRUE) publishState(gs);
+
+        // Radar: đều đặn mỗi TELE_PERIOD_MS, và NGAY khi có/không người đổi —
+        // không bắt hub chờ tới một giây mới biết người vừa bước vào.
+        RadarReading rr;
+        if (xQueueReceive(qRadarTele, &rr, 0) == pdTRUE &&
+            (rr.presence != lastPres || millis() - lastTele >= TELE_PERIOD_MS)) {
+            publishRadar(rr);
+            lastPres = rr.presence;
+            lastTele = millis();
+        }
 
         if (millis() - lastHealth >= 60000) {
             lastHealth = millis();
@@ -353,12 +389,13 @@ void setup() {
                   OI_PROTO_MAJOR, OI_PROTO_MINOR, oiHealthBootCount());
     Serial.println("=============================================");
 
-    qRadar  = xQueueCreate(1, sizeof(RadarReading));
-    qState  = xQueueCreate(8, sizeof(GateState));
-    qHubCmd = xQueueCreate(4, sizeof(bool));
-    qLux    = xQueueCreate(1, sizeof(float));
+    qRadar     = xQueueCreate(1, sizeof(RadarReading));
+    qRadarTele = xQueueCreate(1, sizeof(RadarReading));
+    qState     = xQueueCreate(8, sizeof(GateState));
+    qHubCmd    = xQueueCreate(4, sizeof(bool));
+    qLux       = xQueueCreate(1, sizeof(float));
 
-    if (!qRadar || !qState || !qHubCmd || !qLux) {
+    if (!qRadar || !qRadarTele || !qState || !qHubCmd || !qLux) {
         Serial.println("❌ Không cấp phát được hàng đợi — dừng lại.");
         while (true) delay(1000);
     }

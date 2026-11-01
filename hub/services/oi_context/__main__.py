@@ -56,10 +56,9 @@ def main() -> None:
     def _(topic, payload):
         vision.set(payload)
 
-    @bus.on(f"oi/state/{proto.NODE_GATE}")
-    def _(topic, payload):
-        radar.set(payload)
-
+    # Chỉ lấy radar từ telemetry. oi/state/node2 là trạng thái ĐÈN CỔNG, không có
+    # khoá `pres`: nghe cả nó thì mỗi lần đèn đổi, số đo radar thật bị ghi đè bằng
+    # một bản tin đọc ra "không có người".
     @bus.on(f"oi/tele/{proto.NODE_GATE}")
     def _(topic, payload):
         if proto.K_PRESENCE in payload:

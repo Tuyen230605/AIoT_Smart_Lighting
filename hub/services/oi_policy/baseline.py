@@ -13,14 +13,24 @@ Phần lớn cảm giác "hệ thống đang học" mà người dùng cảm nh�
 
 from __future__ import annotations
 
+import json
+import logging
 import math
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
+
+from oi_common import protocol as proto
+
+log = logging.getLogger("oi-policy")
 
 # ── Rào an toàn, khớp với oi_state.h của firmware ──────────────
 NIGHT_FLOOR_BRI = 8          # không bao giờ tắt hẳn khi có người sau khi trời tối
 MANUAL_LOCK_S = 20 * 60      # người vừa chỉnh tay thì hệ thống im trong 20 phút
 AUTO_MIN_INTERVAL_S = 2 * 60  # nhịp tối đa của thay đổi tự động
 MODEL_MAX_DEVIATION = 60     # trần quyền lực của phần học so với luật nền
+VACANCY_HOLD_S = 10 * 60     # vắng liên tục bao lâu mới được tắt đèn
+PRESENCE_STALE_S = 15.0      # khớp STALE_S của oi-context: cũ hơn là không còn biết
 
 # Đường cong nhịp sinh học: (giờ, độ sáng 0..255, nhiệt độ màu K).
 # Nội suy tuyến tính giữa các mốc, vòng qua nửa đêm.
@@ -83,6 +93,83 @@ class ZoneMemory:
         mean = sum(samples) / n
         shrunk = mean * (n / (n + 5))
         return max(-MODEL_MAX_DEVIATION, min(MODEL_MAX_DEVIATION, shrunk))
+
+    # ── lưu bền ───────────────────────────────────────────────
+    # Bộ nhớ này CHÍNH LÀ phần "học" của bậc 1. Để trong RAM thì mỗi lần
+    # container khởi động lại hay cập nhật, hệ thống quên sạch, và đường S4 theo
+    # tuần không còn đo được việc học tích luỹ — đúng thứ đóng góp C4 phải chứng minh.
+    def save(self, path: str | Path) -> None:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        data = {"version": 1, "offsets": [[z, b, s] for (z, b), s in self.offsets.items()]}
+        tmp = p.with_name(p.name + ".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        # Ghi nguyên tử: mất điện giữa chừng không bao giờ để lại một file dở.
+        os.replace(tmp, p)
+
+    @classmethod
+    def load(cls, path: str | Path) -> ZoneMemory:
+        """Nạp bộ nhớ đã lưu; chưa có file thì bắt đầu từ rỗng.
+
+        File hỏng không được làm sập dịch vụ, nhưng cũng không được lặng lẽ ghi
+        đè mất: đổi tên sang .bad để còn mở ra xem, rồi bắt đầu lại từ rỗng.
+        """
+        p = Path(path)
+        if not p.exists():
+            return cls()
+        try:
+            raw = json.loads(p.read_text(encoding="utf-8"))
+            return cls({(str(z), int(b)): [float(x) for x in s] for z, b, s in raw["offsets"]})
+        except (ValueError, KeyError, TypeError) as e:
+            bad = p.with_name(p.name + ".bad")
+            log.warning("Bộ nhớ học %s hỏng (%s) — chuyển sang %s, bắt đầu lại từ rỗng", p, e, bad)
+            p.replace(bad)
+            return cls()
+
+    def sample_count(self) -> int:
+        return sum(len(s) for s in self.offsets.values())
+
+
+def presence_reading(ctx: dict, now: float) -> bool | None:
+    """Phòng có người không — hoặc `None` khi KHÔNG BIẾT.
+
+    "Không biết" khác hẳn "không có ai". Ngữ cảnh đã cũ (oi-context chết), hoặc
+    cả radar lẫn camera đều mất tín hiệu, thì không được suy ra phòng trống rồi
+    tắt đèn. Khi thiếu thông tin, chọn phía an toàn cho người dùng: đứng yên.
+    """
+    if not ctx:
+        return None
+    ts = ctx.get(proto.K_TS)
+    if ts is None or now - float(ts) > PRESENCE_STALE_S:
+        return None
+
+    sources = ctx.get("sources") or {}
+    ages = (sources.get("vision"), sources.get("radar"))
+    if not any(a is not None and a < PRESENCE_STALE_S for a in ages):
+        return None
+
+    pres = ctx.get(proto.K_PRESENCE) or {}
+    return bool(pres.get("radar") or pres.get("vision"))
+
+
+class OccupancyHold:
+    """Giữ trạng thái "có người" thêm `hold_s` giây sau lần cuối thấy người.
+
+    Cảm biến hiện diện nào cũng có lúc hụt: camera mất người ngồi yên, radar
+    chập chờn khi người ở xa. Tắt đèn ngay nhịp đầu tiên không thấy ai là tắt
+    đèn trên đầu người đang đọc sách — người dùng bật lại, và một "lần sửa sai"
+    giả chảy vào S4. Cảm biến chiếm chỗ thương mại đều có thời gian trễ này.
+    """
+
+    def __init__(self, hold_s: float = VACANCY_HOLD_S) -> None:
+        self.hold_s = hold_s
+        self.last_seen: float | None = None
+
+    def update(self, occupied: bool, now: float) -> bool:
+        if occupied:
+            self.last_seen = now
+            return True
+        return self.last_seen is not None and now - self.last_seen < self.hold_s
 
 
 @dataclass

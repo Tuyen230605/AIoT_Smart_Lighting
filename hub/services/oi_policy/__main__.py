@@ -14,11 +14,20 @@ from datetime import datetime
 from oi_common import protocol as proto
 from oi_common.bus import OiBus, setup_logging
 
-from .baseline import AUTO_MIN_INTERVAL_S, MANUAL_LOCK_S, ZoneMemory, decide
+from .baseline import (
+    AUTO_MIN_INTERVAL_S,
+    MANUAL_LOCK_S,
+    VACANCY_HOLD_S,
+    OccupancyHold,
+    ZoneMemory,
+    decide,
+    presence_reading,
+)
 
 log = logging.getLogger("oi-policy")
 
 NODE = proto.NODE_CONTROLLER
+MEMORY_PATH = os.getenv("OI_POLICY_MEMORY", "/data/policy_memory.json")
 USER_SOURCES = {
     int(proto.CmdSource.VOICE_LOCAL),
     int(proto.CmdSource.VOICE_HUB),
@@ -30,7 +39,10 @@ USER_SOURCES = {
 def main() -> None:
     setup_logging()
     bus = OiBus("oi-policy")
-    memory = ZoneMemory()
+    memory = ZoneMemory.load(MEMORY_PATH)
+    log.info("Nạp bộ nhớ học từ %s: %d ô (vùng × khung giờ), %d mẫu",
+             MEMORY_PATH, len(memory.offsets), memory.sample_count())
+    hold = OccupancyHold(VACANCY_HOLD_S)
 
     ctx: dict = {}
     last_lux: float | None = None
@@ -66,6 +78,10 @@ def main() -> None:
                     delta = float(bri) - float(last_auto_bri)
                     memory.observe(zone, datetime.now().hour, delta)
                     log.info("Ghi nhận sở thích: %s lệch %+.0f so với đề xuất", zone, delta)
+                    try:
+                        memory.save(MEMORY_PATH)
+                    except OSError:
+                        log.exception("Không lưu được bộ nhớ học vào %s", MEMORY_PATH)
             last_auto_bri = None
 
     def _zone_name(c: dict) -> str | None:
@@ -76,6 +92,16 @@ def main() -> None:
         nonlocal last_auto_t, last_auto_bri, last_sent_bri
         now = time.time()
 
+        # Cập nhật bộ giữ hiện diện ở MỌI nhịp, kể cả lúc đang khoá: nếu không,
+        # hết 20 phút khoá nó chỉ còn nhớ lần thấy người trước khi khoá.
+        reading = presence_reading(ctx, now)
+        occupied = hold.update(reading, now) if reading is not None else None
+
+        # ── Rào 0: không biết có người hay không thì không tự quyết ──
+        # Ngữ cảnh cũ hoặc mất cả radar lẫn camera KHÔNG có nghĩa là phòng trống.
+        if occupied is None:
+            return
+
         # ── Rào 1: khoá sau can thiệp thủ công ──
         # Không gì làm người dùng bỏ hệ thống nhanh bằng việc nó cãi lại mình.
         if now - last_manual_t < MANUAL_LOCK_S:
@@ -85,8 +111,6 @@ def main() -> None:
         if now - last_auto_t < AUTO_MIN_INTERVAL_S:
             return
 
-        presence = ctx.get(proto.K_PRESENCE) or {}
-        occupied = bool(presence.get("radar") or presence.get("vision"))
         hour = datetime.now().hour + datetime.now().minute / 60
 
         d = decide(hour, occupied, last_lux, _zone_name(ctx), memory)
@@ -111,12 +135,16 @@ def main() -> None:
             proto.K_SOURCE: int(proto.CmdSource.AGENT),
             proto.K_SEQ: int(now),
         })
+        # Lý do phải nói đúng điều đã xảy ra (FR-E3): đèn tắt vì vắng người
+        # liên tục đủ lâu, không phải vì một nhịp không thấy ai.
+        reason = (d.reason if occupied
+                  else f"không thấy ai trong phòng suốt {VACANCY_HOLD_S // 60} phút")
         bus.publish(proto.TOPIC_AGENT_LOG, {
             proto.K_TS: int(now),
             proto.K_NODE: NODE,
-            proto.K_REASON: f"đặt {d.brightness}/255 vì {d.reason}",
+            proto.K_REASON: f"đặt {d.brightness}/255 vì {reason}",
         }, qos=1)
-        log.info("→ %d/255 · %s", d.brightness, d.reason)
+        log.info("→ %d/255 · %s", d.brightness, reason)
 
     log.info("oi-policy chạy · luật nền, chưa có mô hình học (lắp ở G3.7)")
     bus.run_forever(tick=tick, tick_s=float(os.getenv("OI_POLICY_TICK_S", "10")))

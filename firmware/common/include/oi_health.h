@@ -71,8 +71,11 @@ static inline void oiHealthRegister(const char *name, TaskHandle_t h) {
 static inline void oiHealthCountReconnect(void) { oiHealth.reconnects++; }
 
 /**
- * Số WORD còn dư của ngăn xếp một task (1 word = 4 byte trên ESP32).
- * Càng gần 0 càng sắp tràn.
+ * Số BYTE còn dư của ngăn xếp một task. Càng gần 0 càng sắp tràn.
+ *
+ * Khác FreeRTOS gốc (trả về word): ESP-IDF khai báo StackType_t là uint8_t, nên
+ * cả kích thước stack lúc tạo task lẫn giá trị này đều tính bằng byte. Nhân ×4
+ * như với word sẽ báo dư gấp bốn lần thực tế — task gần tràn vẫn qua NFR-05.
  */
 static inline uint32_t oiHealthStackFree(uint8_t idx) {
     if (idx >= oiHealth.count) return 0;

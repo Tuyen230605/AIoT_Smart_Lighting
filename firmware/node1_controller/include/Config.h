@@ -128,6 +128,17 @@
 #define VAD_SILENCE_SLICES    4
 
 // ══════════════════════════════════════════════════════════════
+//  Một câu nói chỉ kích hoạt MỘT lệnh
+//
+//  Cửa sổ 1 s trượt từng lát 250 ms, nên một từ khoá nằm trong 3–4 lát liên
+//  tiếp và có thể vượt ngưỡng ở mỗi lát. Với "bật đèn" thì chỉ phát thừa trạng
+//  thái; với "tăng sáng" (+15) thì một câu thành +30…+60. Sau khi kích hoạt,
+//  nhãn đó bị giữ lại cho tới khi điểm tụt dưới ngưỡng VÀ đã qua khoảng này —
+//  bằng độ dài cửa sổ, để từ vừa nói đã trôi hẳn ra khỏi cửa sổ.
+// ══════════════════════════════════════════════════════════════
+#define KWS_REFRACTORY_MS     1000
+
+// ══════════════════════════════════════════════════════════════
 //  Nhịp gửi số liệu sức khoẻ (G1.8)
 //  Mỗi phút một lần suốt 72 giờ = 4.320 điểm đo, đủ dày để thấy heap trôi.
 // ══════════════════════════════════════════════════════════════
