@@ -98,7 +98,7 @@
 // nhớ lộ ra ở heap_min trôi xuống, tràn ngăn xếp lộ ra ở stack tiến về 0, và
 // mọi lần reset ngoài ý muốn lộ ra ở boots tăng.
 #define OI_K_HEAP_MIN    "heap_min"  // uint32, ESP.getMinFreeHeap() từ lúc boot
-#define OI_K_STACK       "stack"     // object {tên_task: số word còn dư}
+#define OI_K_STACK       "stack"     // object {tên_task: số byte stack còn dư}
 #define OI_K_RECONNECTS  "recon"     // uint32, số lần nối lại broker kể từ boot
 #define OI_K_BOOTS       "boots"     // uint32, đếm trong NVS — sống qua mọi lần reset
 

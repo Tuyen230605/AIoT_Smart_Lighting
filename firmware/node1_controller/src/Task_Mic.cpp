@@ -108,6 +108,10 @@ void TaskMic(void *pvParameters) {
     uint16_t      silent_slices       = 0;
     bool          window_primed       = false;
 
+    // Nhãn vừa kích hoạt và thời điểm kích hoạt — chống một câu thành nhiều lệnh.
+    const char   *held_label          = NULL;
+    unsigned long held_at             = 0;
+
     for (;;) {
         // Chờ một lát 250 ms. Micro vẫn tiếp tục ghi vào bộ đệm còn lại.
         if (!microphone_inference_record()) {
@@ -132,6 +136,8 @@ void TaskMic(void *pvParameters) {
                 run_classifier_init();
                 window_primed = false;
             }
+            // Im lặng nghĩa là câu vừa rồi đã hết: nhả nhãn đang giữ khi đủ thời gian trơ.
+            if (held_label && millis() - held_at >= KWS_REFRACTORY_MS) held_label = NULL;
             continue;
         }
         silent_slices = 0;
@@ -157,15 +163,27 @@ void TaskMic(void *pvParameters) {
         // ── Máy trạng thái hội thoại ──
         // Hai ngưỡng khác nhau: từ khoá thức đặt cao để chống thức nhầm giữa
         // đêm; lệnh sau khi đã thức hạ xuống vì đã có ngữ cảnh (oi_protocol.h).
+        const float need  = (voice_state == STATE_IDLE) ? OI_CONF_WAKE_MIN : OI_CONF_CMD_MIN;
+        const bool  above = max_score >= need;
+
+        // Chỉ hành động ở lần ĐẦU nhãn vượt ngưỡng (xem KWS_REFRACTORY_MS). Các lát
+        // sau vẫn thấy cùng từ đó trong cửa sổ trượt và bị bỏ qua.
+        if (!above && held_label && millis() - held_at >= KWS_REFRACTORY_MS) held_label = NULL;
+        const bool fresh = above && !(held_label && strcmp(held_label, best_word) == 0);
+        if (fresh) {
+            held_label = best_word;
+            held_at    = millis();
+        }
+
         if (voice_state == STATE_IDLE) {
-            if (max_score >= OI_CONF_WAKE_MIN && strcmp(best_word, "alo_oi") == 0) {
+            if (fresh && strcmp(best_word, "alo_oi") == 0) {
                 Serial.println("🔔 Nghe thấy 'Alo Oi' — mở cửa sổ nghe.");
                 voice_state     = STATE_LISTENING;
                 listening_start = millis();
                 digitalWrite(PIN_LED_INDICATOR, HIGH);
             }
         } else {   // STATE_LISTENING
-            if (max_score >= OI_CONF_CMD_MIN) {
+            if (fresh) {
                 if (strcmp(best_word, "batden") == 0) {
                     Serial.println("✅ Lệnh: BẬT ĐÈN");
                     postSolidWhite();

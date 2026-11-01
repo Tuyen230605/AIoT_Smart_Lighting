@@ -11,9 +11,13 @@ import pytest
 from oi_policy.baseline import (
     MODEL_MAX_DEVIATION,
     NIGHT_FLOOR_BRI,
+    PRESENCE_STALE_S,
+    VACANCY_HOLD_S,
+    OccupancyHold,
     ZoneMemory,
     decide,
     lux_compensation,
+    presence_reading,
 )
 
 
@@ -118,3 +122,86 @@ def test_do_sang_luon_nam_trong_dai_hop_le():
     for hour in range(24):
         d = decide(hour, True, 0.0, "bàn làm việc", mem)
         assert 0 <= d.brightness <= 255
+
+
+# ── Bộ nhớ học sống qua khởi động lại ─────────────────────────
+
+def test_bo_nho_hoc_song_qua_khoi_dong_lai(tmp_path):
+    """Container khởi động lại không được làm hệ thống quên những gì đã học.
+
+    Nếu quên, đường S4 theo tuần đo lại từ đầu sau mỗi lần cập nhật hub, và
+    không còn chứng minh được việc học tích luỹ của đóng góp C4.
+    """
+    path = tmp_path / "mem.json"
+    mem = ZoneMemory()
+    for _ in range(10):
+        mem.observe("bàn làm việc", 21, +40)
+    mem.save(path)
+
+    nap_lai = ZoneMemory.load(path)
+    assert nap_lai.offset("bàn làm việc", 21) == pytest.approx(mem.offset("bàn làm việc", 21))
+    assert nap_lai.sample_count() == 10
+
+
+def test_chua_co_file_thi_bat_dau_tu_rong(tmp_path):
+    assert ZoneMemory.load(tmp_path / "chua-co.json").sample_count() == 0
+
+
+def test_file_hong_khong_lam_sap_va_duoc_giu_lai_de_xem(tmp_path):
+    path = tmp_path / "mem.json"
+    path.write_text("{khong phai json", encoding="utf-8")
+
+    assert ZoneMemory.load(path).sample_count() == 0
+    assert (tmp_path / "mem.json.bad").exists()
+
+
+# ── Không tắt đèn vì một nhịp hụt cảm biến ────────────────────
+
+def _ctx(now: float, radar=False, vision=False, age=1.0, lag=0.0) -> dict:
+    """Bản tin oi/ctx/fused tối thiểu, đúng các khoá oi-context phát ra."""
+    return {
+        "ts": now - lag,
+        "pres": {"radar": radar, "vision": vision},
+        "sources": {"radar": age, "vision": age},
+    }
+
+
+def test_mot_nhip_khong_thay_ai_chua_duoc_tat_den():
+    """Camera mất người ngồi yên đọc sách là chuyện thường, không phải phòng trống."""
+    hold = OccupancyHold()
+    assert hold.update(True, now=0)
+    assert hold.update(False, now=30)
+    assert hold.update(False, now=VACANCY_HOLD_S - 1)
+
+
+def test_vang_lien_tuc_du_lau_moi_tat_den():
+    hold = OccupancyHold()
+    hold.update(True, now=0)
+    assert not hold.update(False, now=VACANCY_HOLD_S + 1)
+
+
+def test_thay_lai_nguoi_thi_dem_lai_tu_dau():
+    hold = OccupancyHold()
+    hold.update(True, now=0)
+    hold.update(True, now=VACANCY_HOLD_S - 10)
+    assert hold.update(False, now=VACANCY_HOLD_S + 60)
+
+
+def test_ngu_canh_cu_la_khong_biet_chu_khong_phai_phong_trong():
+    """oi-context chết thì policy phải đứng yên, không được suy ra phòng trống."""
+    assert presence_reading({}, now=100) is None
+    assert presence_reading(_ctx(100, lag=PRESENCE_STALE_S + 5), now=100) is None
+
+
+def test_mat_ca_radar_lan_camera_la_khong_biet():
+    assert presence_reading(_ctx(100, age=PRESENCE_STALE_S + 1), now=100) is None
+
+    ctx = _ctx(100)
+    ctx["sources"] = {"radar": None, "vision": None}
+    assert presence_reading(ctx, now=100) is None
+
+
+def test_radar_hoac_camera_thay_nguoi_la_co_nguoi():
+    assert presence_reading(_ctx(100, radar=True), now=100) is True
+    assert presence_reading(_ctx(100, vision=True), now=100) is True
+    assert presence_reading(_ctx(100), now=100) is False

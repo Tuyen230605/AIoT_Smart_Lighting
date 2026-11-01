@@ -47,7 +47,11 @@ FIELDS = [
 ]
 
 # Kích thước ngăn xếp khai báo lúc tạo task, tính bằng BYTE (xem Config.h của
-# từng node). Cần để đổi "số word còn dư" thành "phần trăm còn dư".
+# từng node). Cần để đổi "số byte còn dư" thành "phần trăm còn dư".
+#
+# Firmware gửi số BYTE, không phải word: ESP-IDF khai báo StackType_t là uint8_t
+# nên uxTaskGetStackHighWaterMark() trả về byte. Bản trước nhân ×4 như FreeRTOS
+# gốc, báo dư gấp bốn lần thực tế và cho task gần tràn qua cổng NFR-05.
 STACK_BYTES = {
     "net": 10240,
     "sens": 4096,
@@ -157,21 +161,21 @@ def report(path: Path, plot: Path | None) -> int:
         # 3. Ngăn xếp
         worst: dict[str, int] = {}
         for r in rs:
-            for task, free_words in json.loads(r["stack_json"]).items():
-                w = int(free_words)
-                if task not in worst or w < worst[task]:
-                    worst[task] = w
+            for task, free_bytes in json.loads(r["stack_json"]).items():
+                b = int(free_bytes)
+                if task not in worst or b < worst[task]:
+                    worst[task] = b
         print("  Ngăn xếp còn dư ít nhất:")
-        for task, words in sorted(worst.items()):
+        for task, free in sorted(worst.items()):
             total = STACK_BYTES.get(task)
             if total:
-                pct = (words * 4) / total * 100
+                pct = free / total * 100
                 ok = pct >= MIN_STACK_FREE_PCT
                 failed |= not ok
-                print(f"    {task:6s} {words * 4:6d} byte ({pct:5.1f} %) "
+                print(f"    {task:6s} {free:6d} byte ({pct:5.1f} %) "
                       f"{'✅' if ok else '❌ dưới 25 %'}")
             else:
-                print(f"    {task:6s} {words * 4:6d} byte (chưa biết cỡ stack)")
+                print(f"    {task:6s} {free:6d} byte (chưa biết cỡ stack)")
 
     if plot:
         make_plot(rows, nodes, plot)
