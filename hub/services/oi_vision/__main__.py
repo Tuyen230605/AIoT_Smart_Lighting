@@ -16,6 +16,8 @@ from oi_common.bus import OiBus, setup_logging
 
 from .detector import build_detector
 from .stream import FrameBuffer, serve_in_background
+from .text import to_ascii
+from .watchdog import FrameWatchdog
 from .zones import assign, load_zones
 
 log = logging.getLogger("oi-vision")
@@ -71,7 +73,7 @@ def annotate(frame, dets, zone_names, brightness_hint):
         x2, y2 = int(det.x2 * w), int(det.y2 * h)
         cv2.rectangle(frame, (x1, y1), (x2, y2), C_BOX, 2)
 
-        label = f"{zname or 'ngoai vung'} · {det.conf:.2f}"
+        label = to_ascii(f"{zname or 'ngoai vung'} | {det.conf:.2f}")
         (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
         cv2.rectangle(frame, (x1, max(0, y1 - th - 8)), (x1 + tw + 8, y1), C_BOX, -1)
         cv2.putText(frame, label, (x1 + 4, max(10, y1 - 5)),
@@ -83,7 +85,7 @@ def annotate(frame, dets, zone_names, brightness_hint):
 
     banner = f"nguoi: {len(dets)}"
     if brightness_hint is not None:
-        banner += f" · he thong dang tinh: {brightness_hint}/255"
+        banner += f" | he thong dang tinh: {brightness_hint}/255"
     cv2.rectangle(frame, (0, 0), (w, 22), C_ZONE, -1)
     cv2.putText(frame, banner, (8, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.45, C_TEXT, 1, cv2.LINE_AA)
     return frame
@@ -122,6 +124,19 @@ def main() -> None:
         brightness_hint = payload.get(proto.K_BRIGHTNESS)
 
     kind, cam = open_camera(width, height)
+
+    # Camera kẹt thì thoát hẳn để systemd mở lại — xem watchdog.py vì sao phải
+    # os._exit chứ không sys.exit.
+    def _on_stall(age: float) -> None:
+        log.error(
+            "Camera ngừng gửi hình %.0f s (cáp CSI lỏng?) — thoát để được khởi động lại", age
+        )
+        logging.shutdown()
+        os._exit(1)
+
+    watchdog = FrameWatchdog(float(os.getenv("OI_CAM_STALL_S", "15")), _on_stall)
+    watchdog.start()
+
     period = 1.0 / target_fps
     stream_period = 1.0 / stream_fps
     last_stream = 0.0
@@ -136,6 +151,7 @@ def main() -> None:
             if frame is None:
                 time.sleep(0.1)
                 continue
+            watchdog.feed()
 
             dets = detector.detect(frame)
 
@@ -187,6 +203,7 @@ def main() -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        watchdog.stop()
         bus.stop()
         log.info("oi-vision đã dừng")
 
